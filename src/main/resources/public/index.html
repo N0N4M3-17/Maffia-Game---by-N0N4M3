@@ -1,13 +1,167 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mafia LAN Host</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="app" id="app"></main>
-    <script src="/app.js"></script>
-  </body>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mafia 2.0</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Playfair Display', 'serif'],
+            sans: ['Inter', 'sans-serif']
+          },
+          colors: {
+            midnight: '#0d0d0d',
+            blood: '#8b0000',
+            gold: '#d4af37',
+            smoke: '#1a1a2e',
+            fog: '#2d2d44',
+            mist: '#4a4a6a',
+            ghost: '#e8e8f0'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    .bg-mafia { background: linear-gradient(135deg, #0d0d0d 0%, #1a1a2e 50%, #0d0d0d 100%); background-size: 400% 400%; animation: gradientShift 15s ease infinite; }
+    @keyframes gradientShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+    .fog-overlay { background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.45) 100%); }
+    .card-dark { background: linear-gradient(145deg, rgba(26,26,46,.9) 0%, rgba(13,13,13,.95) 100%); border: 1px solid rgba(212,175,55,.2); box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+    .screen { opacity: 0; transform: scale(0.98); transition: opacity .3s ease, transform .3s ease; display: none; }
+    .screen.active { opacity: 1; transform: scale(1); display: flex; }
+    .phase-badge { background: linear-gradient(135deg, #8b0000 0%, #5c0000 100%); }
+    .btn-glow-red { box-shadow: 0 0 20px rgba(139,0,0,.35); }
+    .btn-glow-gold { box-shadow: 0 0 20px rgba(212,175,55,.2); }
+    .player-row:hover { background: rgba(212,175,55,.08); }
+    .role-card.mafia { border-color: #8b0000; box-shadow: 0 0 35px rgba(139,0,0,.35); }
+    .role-card.town { border-color: #3b82f6; box-shadow: 0 0 35px rgba(59,130,246,.35); }
+    .role-card.special { border-color: #d4af37; box-shadow: 0 0 35px rgba(212,175,55,.35); }
+  </style>
+</head>
+<body class="h-full bg-mafia text-ghost font-sans overflow-auto">
+<div id="app" class="w-full h-full flex flex-col">
+
+  <div id="screen-home" class="screen active flex-col h-full">
+    <div class="fog-overlay flex-1 flex items-center justify-center p-4">
+      <div class="w-full max-w-5xl flex flex-col lg:flex-row items-center gap-8 lg:gap-16">
+        <div class="flex-1 text-center lg:text-left">
+          <h1 id="game-title" class="font-display text-5xl lg:text-7xl text-gold mb-3 tracking-tight">Mafia 2.0</h1>
+          <p class="text-gray-300 text-lg">The Ultimate Social Deduction Game</p>
+          <p class="text-mist text-sm">LAN Multiplayer • Browser-Based</p>
+        </div>
+        <div class="flex-1 w-full max-w-md space-y-4">
+          <button onclick="showScreen('screen-gm-setup')" class="w-full py-5 px-8 bg-blood rounded-xl text-white font-semibold text-xl btn-glow-red">Host as GM</button>
+          <button onclick="showScreen('screen-player-join')" class="w-full py-5 px-8 bg-fog border-2 border-gold rounded-xl text-gold font-semibold text-xl btn-glow-gold">Join as Player</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-player-join" class="screen flex-col h-full">
+    <header class="bg-midnight/80 border-b border-gold/20 px-4 py-3">
+      <div class="flex items-center justify-between max-w-6xl mx-auto">
+        <button onclick="showScreen('screen-home')" class="text-gray-300 hover:text-gold">← Back</button>
+        <h2 class="font-display text-xl text-gold">Join Game</h2><div class="w-16"></div>
+      </div>
+    </header>
+    <div class="flex-1 flex items-center justify-center p-4 fog-overlay">
+      <div class="card-dark rounded-2xl p-8 w-full max-w-md">
+        <h3 class="font-display text-2xl mb-4">Enter Your Name</h3>
+        <input type="text" id="player-name-input" maxlength="20" placeholder="Enter your name..." class="w-full px-4 py-4 bg-midnight border border-mist rounded-xl text-ghost text-lg focus:border-gold focus:outline-none">
+        <p id="name-error" class="text-red-400 text-sm mt-2 hidden"></p>
+        <button onclick="attemptJoin()" class="w-full mt-4 py-4 bg-blood rounded-xl text-white font-semibold text-lg btn-glow-red">Join Lobby</button>
+        <p id="join-status" class="text-sm text-gray-300 mt-4"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-gm-setup" class="screen flex-col h-full">
+    <header class="bg-midnight/80 border-b border-gold/20 px-4 py-3">
+      <div class="flex items-center justify-between max-w-7xl mx-auto">
+        <button onclick="showScreen('screen-home')" class="text-gray-300 hover:text-gold">← Back</button>
+        <div class="flex items-center gap-3"><span id="gm-phase-pill" class="phase-badge px-3 py-1 rounded-full text-white text-sm font-medium">Lobby</span><h2 class="font-display text-xl text-gold">Game Master Setup</h2></div>
+        <div class="w-16"></div>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-auto p-4">
+      <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
+        <div class="card-dark rounded-xl p-5">
+          <h3 class="font-display text-lg text-gold mb-4">Connection</h3>
+          <div class="bg-midnight rounded-lg p-4 mb-3">
+            <p class="text-mist text-xs uppercase mb-2">Share This Link</p>
+            <code id="gm-primary-lan" class="block text-gold text-sm break-all">No LAN IP detected</code>
+            <p class="text-gray-300 text-sm mt-2">Local: <span id="gm-local-url"></span></p>
+          </div>
+          <button onclick="copyToClipboard()" class="w-full py-2 px-3 bg-fog hover:bg-mist rounded-lg text-gray-200 text-sm">Copy Link</button>
+        </div>
+
+        <div class="card-dark rounded-xl p-5">
+          <h3 class="font-display text-lg text-gold mb-4">Role Configuration</h3>
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="bg-midnight rounded-lg p-3"><div class="flex justify-between mb-2"><span>Mafia</span><span id="mafia-count">1</span></div><div class="flex gap-2"><button onclick="adjustRole('mafia',-1)" class="flex-1 bg-fog rounded">−</button><button onclick="adjustRole('mafia',1)" class="flex-1 bg-fog rounded">+</button></div></div>
+              <div class="bg-midnight rounded-lg p-3"><div class="flex justify-between mb-2"><span>Sheriff</span><span id="sheriff-count">1</span></div><div class="flex gap-2"><button onclick="adjustRole('sheriff',-1)" class="flex-1 bg-fog rounded">−</button><button onclick="adjustRole('sheriff',1)" class="flex-1 bg-fog rounded">+</button></div></div>
+              <div class="bg-midnight rounded-lg p-3"><div class="flex justify-between mb-2"><span>Doctor</span><span id="doctor-count">0</span></div><div class="flex gap-2"><button onclick="adjustRole('doctor',-1)" class="flex-1 bg-fog rounded">−</button><button onclick="adjustRole('doctor',1)" class="flex-1 bg-fog rounded">+</button></div></div>
+              <div class="bg-midnight rounded-lg p-3"><div class="flex justify-between mb-2"><span>Vigilante</span><span id="vigilante-count">0</span></div><div class="flex gap-2"><button onclick="adjustRole('vigilante',-1)" class="flex-1 bg-fog rounded">−</button><button onclick="adjustRole('vigilante',1)" class="flex-1 bg-fog rounded">+</button></div></div>
+            </div>
+            <div class="bg-midnight rounded-lg p-3"><div class="flex justify-between"><span>Town (Auto)</span><span id="town-count">1</span></div><p class="text-mist text-xs">Auto-calculated from player count.</p></div>
+            <div class="bg-fog/30 rounded-lg p-3 border border-gold/20 text-sm">
+              <div class="flex justify-between"><span>Total Roles:</span><span><span id="total-roles">3</span> / <span id="player-count">0</span> players</span></div>
+              <div id="validation-status" class="mt-2 text-yellow-300">Waiting for players…</div>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="saveSetup()" class="flex-1 py-2 bg-fog hover:bg-mist rounded-lg">Save Setup</button>
+              <button onclick="launchGame()" class="flex-1 py-2 bg-blood rounded-lg text-white btn-glow-red">Launch Game (Night 0)</button>
+            </div>
+            <button onclick="resetLobby()" class="w-full py-2 bg-amber-400 text-black rounded-lg font-medium">Reset Lobby</button>
+            <p id="gm-msg" class="text-sm text-gray-300"></p>
+          </div>
+        </div>
+
+        <div class="card-dark rounded-xl p-5 flex flex-col">
+          <h3 class="font-display text-lg text-gold mb-4">Players (<span id="roster-count">0</span>)</h3>
+          <div class="flex-1 overflow-auto space-y-2" id="player-roster"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-night0-player" class="screen flex-col h-full">
+    <header class="bg-midnight/80 border-b border-gold/20 px-4 py-3">
+      <div class="max-w-6xl mx-auto flex justify-between"><div><span class="font-display text-gold">Mafia 2.0</span> | <span id="player-name-label">Player</span></div><span class="phase-badge px-3 py-1 rounded-full">Night 0</span></div>
+    </header>
+    <div class="flex-1 flex items-center justify-center p-4 fog-overlay">
+      <div class="w-full max-w-lg">
+        <div id="role-hidden" class="card-dark rounded-2xl p-8 text-center">
+          <h2 class="font-display text-2xl mb-3">Your Role Awaits</h2>
+          <p class="text-mist mb-5">Tap below to reveal your secret role</p>
+          <button onclick="revealRole()" class="w-full py-4 bg-blood rounded-xl text-white">Reveal My Role</button>
+        </div>
+        <div id="role-revealed" class="hidden">
+          <div id="role-card" class="role-card rounded-2xl p-8 text-center border-2">
+            <h2 id="role-name" class="font-display text-4xl text-gold mb-3">ROLE</h2>
+            <p id="role-desc" class="text-gray-200"></p>
+          </div>
+          <div class="flex gap-3 mt-4"><button onclick="hideRole()" class="flex-1 py-3 bg-fog rounded-xl">Hide Role</button><button onclick="acknowledgeRole()" class="flex-1 py-3 bg-blood rounded-xl text-white">I've Seen My Role</button></div>
+        </div>
+        <div id="role-acknowledged" class="hidden card-dark rounded-2xl p-8 text-center">
+          <h2 class="font-display text-2xl">Role Confirmed</h2>
+          <p class="text-mist">Waiting for GM to continue...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="/app.js"></script>
+</body>
 </html>
