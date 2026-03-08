@@ -226,8 +226,8 @@ async function attemptJoin() {
   setPlayerPanels(false);
 }
 
-function targetOptions(ps, includeAbstain = false) {
-  const alive = ps.players.filter((p) => p.alive);
+function targetOptions(ps, includeAbstain = false, allowSelf = false) {
+  const alive = ps.players.filter((p) => p.alive && (allowSelf || p.id !== ps.id));
   let options = includeAbstain ? '<option value="">-- choose target (or abstain) --</option>' : '<option value="">-- choose target --</option>';
   for (const p of alive) options += `<option value="${p.id}">${p.name}</option>`;
   return options;
@@ -253,11 +253,11 @@ function bindTargetSelection(phase, ps, currentFromServer, includeAbstain = fals
 function phaseActionButtons(ps) {
   if (!ps.alive) return '<p class="text-red-400">You are dead. Observe only.</p>';
 
-  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps)}</select><button onclick="submitMafiaVote()" class="w-full bg-blood p-2 rounded">Submit Mafia Vote</button>`;
-  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps)}</select><button onclick="submitSheriff()" class="w-full bg-blood p-2 rounded">Investigate</button><p class="text-xs text-gold">Result: ${ps.sheriffResult || '-'}</p>`;
-  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps)}</select><button onclick="submitDoctor()" class="w-full bg-blood p-2 rounded">Protect</button>`;
-  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true)}</select><button onclick="submitVigilante()" class="w-full bg-blood p-2 rounded">Shoot / Skip</button>`;
-  if (ps.phase === 'day_vote') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true)}</select><button onclick="submitDayVote()" class="w-full bg-blood p-2 rounded">Submit Day Vote</button>`;
+  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, false)}</select><button onclick="submitMafiaVote()" class="w-full bg-blood p-2 rounded">Submit Mafia Vote</button>`;
+  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, false)}</select><button onclick="submitSheriff()" class="w-full bg-blood p-2 rounded">Investigate</button><p class="text-xs text-gold">Result: ${ps.sheriffResult || 'No investigation submitted yet.'}</p>`;
+  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, true)}</select><button onclick="submitDoctor()" class="w-full bg-blood p-2 rounded">Protect</button>`;
+  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true, false)}</select><button onclick="submitVigilante()" class="w-full bg-blood p-2 rounded">Shoot / Skip</button>`;
+  if (ps.phase === 'day_vote') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true, false)}</select><button onclick="submitDayVote()" class="w-full bg-blood p-2 rounded">Submit Day Vote</button>`;
   if (ps.phase === 'discussion') return `<p class="text-gold">Discussion in progress.</p>`;
   if (ps.phase === 'morning') return `<p class="text-gold">Morning: ${ps.morningDeaths?.length ? ps.morningDeaths.map(d=>d.name).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'game_over') return `<p class="text-gold text-lg">Game Over — Winner: ${ps.winner || 'Unknown'}</p>`;

@@ -332,6 +332,9 @@ public class Main {
         STATE.vigilanteTarget = null;
         STATE.dayVotes.clear();
         STATE.morningDeaths = new ArrayList<>();
+        for (Player p : STATE.players) {
+            if ("Sheriff".equals(p.role)) p.lastSheriffResult = null;
+        }
         setPhase("night_mafia");
     }
 
@@ -339,13 +342,23 @@ public class Main {
         if ("game_over".equals(STATE.phase)) return;
         switch (STATE.phase) {
             case "night0" -> beginNight();
-            case "night_mafia" -> setPhase(aliveRoleExists("Sheriff") ? "night_sheriff" : (aliveRoleExists("Doctor") ? "night_doctor" : (aliveRoleExists("Vigilante") ? "night_vigilante" : "morning")));
-            case "night_sheriff" -> setPhase(aliveRoleExists("Doctor") ? "night_doctor" : (aliveRoleExists("Vigilante") ? "night_vigilante" : "morning"));
-            case "night_doctor" -> setPhase(aliveRoleExists("Vigilante") ? "night_vigilante" : "morning");
+            case "night_mafia" -> {
+                if (aliveRoleExists("Sheriff")) setPhase("night_sheriff");
+                else if (aliveRoleExists("Doctor")) setPhase("night_doctor");
+                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
+                else endNightAndEnterMorning();
+            }
+            case "night_sheriff" -> {
+                if (aliveRoleExists("Doctor")) setPhase("night_doctor");
+                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
+                else endNightAndEnterMorning();
+            }
+            case "night_doctor" -> {
+                if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
+                else endNightAndEnterMorning();
+            }
             case "night_vigilante" -> {
-                resolveNight();
-                setPhase("morning");
-                checkWin();
+                endNightAndEnterMorning();
             }
             case "morning" -> setPhase("discussion");
             case "discussion" -> setPhase("day_vote");
@@ -355,6 +368,12 @@ public class Main {
                 if (!"game_over".equals(STATE.phase)) beginNight();
             }
         }
+    }
+
+    private static void endNightAndEnterMorning() {
+        resolveNight();
+        setPhase("morning");
+        checkWin();
     }
 
     private static void resolveNight() {
@@ -382,8 +401,7 @@ public class Main {
     }
 
     private static void resolveDayVote() {
-        int needed = majorityThreshold(aliveCount());
-        String target = majorityTarget(STATE.dayVotes, needed, true);
+        String target = pluralityTarget(STATE.dayVotes, true);
         if (target != null) {
             Player p = findPlayer(target);
             if (p != null && p.alive) {
@@ -433,6 +451,27 @@ public class Main {
     }
 
     private static int majorityThreshold(int n) { return (n / 2) + 1; }
+
+    private static String pluralityTarget(Map<String, String> voteMap, boolean allowNullVotes) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (String t : voteMap.values()) {
+            if (t == null && allowNullVotes) continue;
+            if (t == null) continue;
+            counts.put(t, counts.getOrDefault(t, 0) + 1);
+        }
+        String best = null;
+        int bestCount = 0;
+        boolean tie = false;
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (e.getValue() > bestCount) {
+                best = e.getKey();
+                bestCount = e.getValue();
+                tie = false;
+            } else if (e.getValue() == bestCount) tie = true;
+        }
+        if (bestCount <= 0 || tie) return null;
+        return best;
+    }
 
     private static Player requireAlivePlayer(JsonObject b, String role, String phase) {
         String pid = b.has("playerId") ? b.get("playerId").getAsString() : "";
