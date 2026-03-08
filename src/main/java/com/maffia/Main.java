@@ -406,7 +406,12 @@ public class Main {
     private static Map<String, Object> gmStatePayload() {
         List<Map<String, Object>> players = new ArrayList<>();
         for (Player p : STATE.players) {
-            players.add(Map.of("id", p.id, "name", p.name, "alive", p.alive, "role", p.role));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", p.id);
+            row.put("name", p.name);
+            row.put("alive", p.alive);
+            row.put("role", p.role);
+            players.add(row);
         }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("phase", STATE.phase);
