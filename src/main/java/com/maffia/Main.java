@@ -136,10 +136,11 @@ public class Main {
                         positiveSecondOrDefault(b, "dayVoteSec", STATE.timerSettings.dayVoteSec)
                 );
                 STATE.timerSettings = t;
+                if (b.has("publicDayVoteTally")) STATE.publicDayVoteTally = b.get("publicDayVoteTally").getAsBoolean();
                 if (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase)) {
                     STATE.phaseEndsAt = System.currentTimeMillis() + (phaseDurationSec(STATE.phase) * 1000L);
                 }
-                writeJson(ex, 200, Map.of("ok", true, "timerSettings", t.toMap()));
+                writeJson(ex, 200, Map.of("ok", true, "timerSettings", t.toMap(), "publicDayVoteTally", STATE.publicDayVoteTally));
                 return;
             }
 
@@ -186,7 +187,13 @@ public class Main {
                 String target = b.get("targetId").getAsString();
                 if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 STATE.mafiaVotes.put(actor.id, target);
-                writeJson(ex, 200, Map.of("ok", true));
+                Player voted = findPlayer(target);
+                if (voted != null) {
+                    STATE.mafiaChat.add(new ChatMessage("SYSTEM", actor.name + " voted for " + voted.name));
+                    if (STATE.mafiaChat.size() > 50) STATE.mafiaChat.remove(0);
+                }
+                int pending = Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size());
+                writeJson(ex, 200, Map.of("ok", true, "pendingMafiaVotes", pending));
                 return;
             }
 
@@ -239,8 +246,19 @@ public class Main {
                 if (!"day_vote".equals(STATE.phase)) { writeJson(ex, 400, Map.of("error", "Not in day vote phase.")); return; }
                 String target = b.has("targetId") && !b.get("targetId").isJsonNull() ? b.get("targetId").getAsString() : "";
                 if (!target.isBlank() && !isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive or abstain.")); return; }
-                STATE.dayVotes.put(actor.id, target.isBlank() ? null : target);
-                writeJson(ex, 200, Map.of("ok", true));
+                String stored = target.isBlank() ? null : target;
+                STATE.dayVotes.put(actor.id, stored);
+                String votedName = "abstain";
+                if (stored != null) {
+                    Player voted = findPlayer(stored);
+                    votedName = voted != null ? voted.name : stored;
+                }
+                if (STATE.publicDayVoteTally) {
+                    STATE.playerChat.add(new ChatMessage("SYSTEM", actor.name + " voted for " + votedName));
+                    if (STATE.playerChat.size() > 120) STATE.playerChat.remove(0);
+                }
+                int pending = Math.max(0, aliveCount() - STATE.dayVotes.size());
+                writeJson(ex, 200, Map.of("ok", true, "pendingDayVotes", pending));
                 return;
             }
 
@@ -527,6 +545,9 @@ public class Main {
         payload.put("lastSheriffResult", STATE.lastSheriffResult);
         payload.put("mafiaVoteTally", tally(STATE.mafiaVotes));
         payload.put("dayVoteTally", tally(STATE.dayVotes));
+        payload.put("pendingMafiaVotes", Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()));
+        payload.put("pendingDayVotes", Math.max(0, aliveCount() - STATE.dayVotes.size()));
+        payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
         payload.put("playerChat", chatPayload(STATE.playerChat));
         return payload;
@@ -558,6 +579,11 @@ public class Main {
         payload.put("winner", STATE.winner);
         payload.put("mafiaVoteCurrent", STATE.mafiaVotes.get(p.id));
         payload.put("dayVoteCurrent", STATE.dayVotes.get(p.id));
+        payload.put("mafiaVoteSubmitted", STATE.mafiaVotes.containsKey(p.id));
+        payload.put("dayVoteSubmitted", STATE.dayVotes.containsKey(p.id));
+        payload.put("pendingMafiaVotes", Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()));
+        payload.put("pendingDayVotes", Math.max(0, aliveCount() - STATE.dayVotes.size()));
+        payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("timerSettings", STATE.timerSettings.toMap());
 
         if ("Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase)) {
@@ -705,6 +731,7 @@ public class Main {
         List<Map<String, String>> morningDeaths = new ArrayList<>();
         List<ChatMessage> mafiaChat = new ArrayList<>();
         List<ChatMessage> playerChat = new ArrayList<>();
+        boolean publicDayVoteTally = true;
 
         void reset() {
             phase = "lobby";
@@ -725,6 +752,7 @@ public class Main {
             morningDeaths = new ArrayList<>();
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
+            publicDayVoteTally = true;
         }
     }
 

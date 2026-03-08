@@ -73,6 +73,10 @@
             <label>Morning <input id="set-morningSec" type="number" min="1" class="w-full bg-midnight p-1 rounded"/></label>
             <label>Discussion <input id="set-discussionSec" type="number" min="1" class="w-full bg-midnight p-1 rounded"/></label>
             <label class="col-span-2">Day Vote <input id="set-dayVoteSec" type="number" min="1" class="w-full bg-midnight p-1 rounded"/></label>
+          <label class="col-span-2 flex items-center gap-2 mt-1">
+            <input id="set-public-day-tally" type="checkbox" class="accent-gold" checked />
+            <span>Public day vote tally in player chat</span>
+          </label>
           </div>
           <button onclick="saveTimerSettings()" class="w-full mt-1 py-2 bg-fog rounded">Save Timer Settings</button>
           <pre id="gm-action-status" class="text-xs whitespace-pre-wrap text-gray-300 bg-midnight p-2 rounded max-h-32 overflow-auto"></pre>

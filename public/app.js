@@ -3,6 +3,7 @@ const state = {
   roles: { mafia: 1, sheriff: 1, doctor: 0, vigilante: 0, town: 1 },
   vigilanteShots: 1,
   timerSettings: { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, discussionSec: 60, dayVoteSec: 60 },
+  publicDayVoteTally: true,
   roleDirty: false,
   settingsDirty: false,
   gmPoll: null,
@@ -150,6 +151,9 @@ async function refreshGm() {
 
   if (!state.settingsDirty && gm.timerSettings) {
     state.timerSettings = { ...state.timerSettings, ...gm.timerSettings };
+    state.publicDayVoteTally = gm.publicDayVoteTally !== undefined ? gm.publicDayVoteTally : state.publicDayVoteTally;
+    const dayTallyToggle = document.getElementById('set-public-day-tally');
+    if (dayTallyToggle) dayTallyToggle.checked = !!state.publicDayVoteTally;
     updateTimerInputs();
   }
 
@@ -188,7 +192,9 @@ async function saveSetup() {
 
 async function saveTimerSettings() {
   state.timerSettings = readTimerInputs();
-  await api('/api/gm/settings', { method: 'POST', body: JSON.stringify(state.timerSettings) });
+  const dayTallyToggle = document.getElementById('set-public-day-tally');
+  state.publicDayVoteTally = dayTallyToggle ? !!dayTallyToggle.checked : state.publicDayVoteTally;
+  await api('/api/gm/settings', { method: 'POST', body: JSON.stringify({ ...state.timerSettings, publicDayVoteTally: state.publicDayVoteTally }) });
   state.settingsDirty = false;
   document.getElementById('gm-msg').textContent = 'Timer settings saved.';
   await refreshGm();
@@ -212,6 +218,9 @@ async function resetLobby() {
   state.roles = { mafia: 1, sheriff: 1, doctor: 0, vigilante: 0, town: 1 };
   state.vigilanteShots = 1;
   state.timerSettings = { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, discussionSec: 60, dayVoteSec: 60 };
+  state.publicDayVoteTally = true;
+  const dayTallyToggle = document.getElementById('set-public-day-tally');
+  if (dayTallyToggle) dayTallyToggle.checked = true;
   updateRoleInputs();
   updateTimerInputs();
   await refreshGm();
@@ -259,11 +268,17 @@ function bindTargetSelection(phase, ps, currentFromServer, includeAbstain = fals
 function phaseActionButtons(ps) {
   if (!ps.alive) return '<p class="text-red-400">You are dead. Observe only.</p>';
 
-  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, false)}</select><button onclick="submitMafiaVote()" class="w-full bg-blood p-2 rounded">Submit Mafia Vote</button>`;
+  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') {
+    if (ps.mafiaVoteSubmitted) return `<p class="text-gold">Vote submitted. ${ps.pendingMafiaVotes || 0} mafia player(s) did not vote yet.</p>`;
+    return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, false)}</select><button onclick="submitMafiaVote()" class="w-full bg-blood p-2 rounded">Submit Mafia Vote</button><p class="text-xs text-mist">After voting: ${ps.pendingMafiaVotes || 0} mafia player(s) pending.</p>`;
+  }
   if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, false)}</select><button onclick="submitSheriff()" class="w-full bg-blood p-2 rounded">Investigate</button><p class="text-xs text-gold">Result: ${ps.sheriffResult || 'No investigation submitted yet.'}</p>`;
   if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, false, true)}</select><button onclick="submitDoctor()" class="w-full bg-blood p-2 rounded">Protect</button>`;
   if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true, false)}</select><button onclick="submitVigilante()" class="w-full bg-blood p-2 rounded">Shoot / Skip</button>`;
-  if (ps.phase === 'day_vote') return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true, false)}</select><button onclick="submitDayVote()" class="w-full bg-blood p-2 rounded">Submit Day Vote</button>`;
+  if (ps.phase === 'day_vote') {
+    if (ps.dayVoteSubmitted) return `<p class="text-gold">Vote submitted. ${ps.pendingDayVotes || 0} player(s) did not vote yet.</p>`;
+    return `<select id="act-target" class="w-full bg-midnight p-2 rounded">${targetOptions(ps, true, false)}</select><button onclick="submitDayVote()" class="w-full bg-blood p-2 rounded">Submit Day Vote</button><p class="text-xs text-mist">${ps.pendingDayVotes || 0} player(s) currently pending.</p>`;
+  }
   if (ps.phase === 'discussion') return `<p class="text-gold">Discussion in progress.</p>`;
   if (ps.phase === 'morning') return `<p class="text-gold">Morning: ${ps.morningDeaths?.length ? ps.morningDeaths.map(d=>d.name).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'game_over') return `<p class="text-gold text-lg">Game Over — Winner: ${ps.winner || 'Unknown'}</p>`;
@@ -303,7 +318,7 @@ async function refreshPlayer() {
       setRoleRevealState('revealed');
     }
 
-    const actionKey = `${ps.phase}|${ps.role}|${ps.alive}`;
+    const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}`;
     if (state.lastActionRenderKey !== actionKey) {
       document.getElementById('player-action-panel').innerHTML = phaseActionButtons(ps);
       state.lastActionRenderKey = actionKey;
