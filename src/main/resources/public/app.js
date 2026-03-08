@@ -10,6 +10,7 @@ const state = {
   lanUrls: [],
   localhost: '',
   pendingTargetByPhase: {},
+  roleReveal: { revealed: false, acknowledged: false, lastPhase: '' },
 };
 
 async function api(path, opts = {}) {
@@ -44,6 +45,32 @@ function fmtSec(s) {
 function setPlayerPanels(joinMode) {
   document.getElementById('join-panel').classList.toggle('hidden', !joinMode);
   document.getElementById('role-panel').classList.toggle('hidden', joinMode);
+}
+
+
+function setRoleRevealState(mode) {
+  const hidden = document.getElementById('role-hidden');
+  const shown = document.getElementById('role-revealed');
+  const ack = document.getElementById('role-ack');
+  if (!hidden || !shown || !ack) return;
+  hidden.classList.toggle('hidden', mode !== 'hidden');
+  shown.classList.toggle('hidden', mode !== 'revealed');
+  ack.classList.toggle('hidden', mode !== 'ack');
+}
+
+function revealRole() {
+  state.roleReveal.revealed = true;
+  setRoleRevealState('revealed');
+}
+
+function hideRole() {
+  state.roleReveal.revealed = false;
+  setRoleRevealState('hidden');
+}
+
+function acknowledgeRole() {
+  state.roleReveal.acknowledged = true;
+  setRoleRevealState('ack');
 }
 
 function roleTotal() { return state.roles.mafia + state.roles.sheriff + state.roles.doctor + state.roles.vigilante + state.roles.town; }
@@ -254,6 +281,21 @@ async function refreshPlayer() {
     document.getElementById('vigi-ammo').textContent = ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
 
     setPlayerPanels(false);
+
+    if (state.roleReveal.lastPhase !== ps.phase) {
+      state.roleReveal.lastPhase = ps.phase;
+      state.roleReveal.revealed = false;
+      state.roleReveal.acknowledged = false;
+    }
+
+    if (ps.phase === 'night0') {
+      if (state.roleReveal.acknowledged) setRoleRevealState('ack');
+      else if (state.roleReveal.revealed) setRoleRevealState('revealed');
+      else setRoleRevealState('hidden');
+    } else {
+      setRoleRevealState('revealed');
+    }
+
     document.getElementById('player-action-panel').innerHTML = phaseActionButtons(ps);
 
     if (ps.phase === 'night_mafia' && ps.role === 'Mafia') bindTargetSelection('night_mafia', ps, ps.mafiaVoteCurrent, false);
@@ -319,6 +361,9 @@ window.submitVigilante = submitVigilante;
 window.submitDayVote = submitDayVote;
 window.sendMafiaChat = sendMafiaChat;
 window.copyToClipboard = copyToClipboard;
+window.revealRole = revealRole;
+window.hideRole = hideRole;
+window.acknowledgeRole = acknowledgeRole;
 
 updateRoleInputs();
 updateTimerInputs();
