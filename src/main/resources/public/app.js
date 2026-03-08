@@ -11,6 +11,7 @@ const state = {
   localhost: '',
   pendingTargetByPhase: {},
   roleReveal: { revealed: false, acknowledged: false, lastPhase: '' },
+  lastActionRenderKey: '',
 };
 
 async function api(path, opts = {}) {
@@ -167,6 +168,11 @@ async function refreshGm() {
     dayVoteTally: gm.dayVoteTally,
     mafiaVoteTally: gm.mafiaVoteTally,
   }, null, 2);
+
+  const gmMafiaChat = document.getElementById('gm-mafia-chat-log');
+  const gmPlayerChat = document.getElementById('gm-player-chat-log');
+  if (gmMafiaChat) gmMafiaChat.innerHTML = (gm.mafiaChat || []).map((m) => `<div><span class="text-gold">[${m.author}]</span> ${m.message}</div>`).join('') || '<div class="text-mist">No mafia chat yet.</div>';
+  if (gmPlayerChat) gmPlayerChat.innerHTML = (gm.playerChat || []).map((m) => `<div><span class="text-gold">[${m.author}]</span> ${m.message}</div>`).join('') || '<div class="text-mist">No player chat yet.</div>';
 }
 
 function startGmPolling() { stopPolling(); refreshGm().catch(setGmMsg); state.gmPoll = setInterval(() => refreshGm().catch(setGmMsg), 1000); }
@@ -269,6 +275,7 @@ async function refreshPlayer() {
     setPlayerPanels(true);
     document.getElementById('player-name-label').textContent = '-';
     document.getElementById('player-timer-live').textContent = '00:00';
+    state.lastActionRenderKey = '';
     return;
   }
   try {
@@ -296,7 +303,11 @@ async function refreshPlayer() {
       setRoleRevealState('revealed');
     }
 
-    document.getElementById('player-action-panel').innerHTML = phaseActionButtons(ps);
+    const actionKey = `${ps.phase}|${ps.role}|${ps.alive}`;
+    if (state.lastActionRenderKey !== actionKey) {
+      document.getElementById('player-action-panel').innerHTML = phaseActionButtons(ps);
+      state.lastActionRenderKey = actionKey;
+    }
 
     if (ps.phase === 'night_mafia' && ps.role === 'Mafia') bindTargetSelection('night_mafia', ps, ps.mafiaVoteCurrent, false);
     if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') bindTargetSelection('night_sheriff', ps, null, false);
@@ -311,12 +322,15 @@ async function refreshPlayer() {
       chatPanel.classList.remove('hidden');
       document.getElementById('mafia-chat-log').innerHTML = (ps.mafiaChat || []).map((m) => `<div>[${m.author}] ${m.message}</div>`).join('');
     } else chatPanel.classList.add('hidden');
+
+    document.getElementById('player-chat-log').innerHTML = (ps.playerChat || []).map((m) => `<div>[${m.author}] ${m.message}</div>`).join('');
   } catch (e) {
     localStorage.removeItem('playerId');
     state.playerId = null;
     document.getElementById('join-status').textContent = 'Session expired. Join lobby again.';
     setPlayerPanels(true);
     document.getElementById('player-name-label').textContent = '-';
+    state.lastActionRenderKey = '';
   }
 }
 
@@ -342,6 +356,14 @@ async function sendMafiaChat() {
   document.getElementById('mafia-chat-input').value = '';
 }
 
+async function sendPlayerChat() {
+  const input = document.getElementById('player-chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  await postAction('/api/player/chat', { message: text });
+  input.value = '';
+}
+
 function copyToClipboard() { navigator.clipboard.writeText(state.lanUrls[0] || state.localhost || ''); }
 
 window.showScreen = showScreen;
@@ -360,6 +382,7 @@ window.submitDoctor = submitDoctor;
 window.submitVigilante = submitVigilante;
 window.submitDayVote = submitDayVote;
 window.sendMafiaChat = sendMafiaChat;
+window.sendPlayerChat = sendPlayerChat;
 window.copyToClipboard = copyToClipboard;
 window.revealRole = revealRole;
 window.hideRole = hideRole;

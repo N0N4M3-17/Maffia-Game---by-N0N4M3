@@ -255,6 +255,19 @@ public class Main {
                 writeJson(ex, 200, Map.of("ok", true));
                 return;
             }
+
+            if ("POST".equals(method) && "/api/player/chat".equals(path)) {
+                JsonObject b = readBodyJson(ex);
+                String pid = b.has("playerId") ? b.get("playerId").getAsString() : "";
+                Player actor = findPlayer(pid);
+                if (actor == null) { writeJson(ex, 400, Map.of("error", "Player required.")); return; }
+                String msg = b.has("message") ? b.get("message").getAsString().trim() : "";
+                if (msg.isBlank()) { writeJson(ex, 400, Map.of("error", "message required")); return; }
+                STATE.playerChat.add(new ChatMessage(actor.name, msg));
+                if (STATE.playerChat.size() > 120) STATE.playerChat.remove(0);
+                writeJson(ex, 200, Map.of("ok", true));
+                return;
+            }
         }
 
         writeJson(ex, 404, Map.of("error", "API route not found."));
@@ -514,6 +527,8 @@ public class Main {
         payload.put("lastSheriffResult", STATE.lastSheriffResult);
         payload.put("mafiaVoteTally", tally(STATE.mafiaVotes));
         payload.put("dayVoteTally", tally(STATE.dayVotes));
+        payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
+        payload.put("playerChat", chatPayload(STATE.playerChat));
         return payload;
     }
 
@@ -546,9 +561,9 @@ public class Main {
         payload.put("timerSettings", STATE.timerSettings.toMap());
 
         if ("Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase)) {
-            List<Map<String, String>> chat = STATE.mafiaChat.stream().map(m -> Map.of("author", m.author, "message", m.message)).toList();
-            payload.put("mafiaChat", chat);
+            payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
         } else payload.put("mafiaChat", List.of());
+        payload.put("playerChat", chatPayload(STATE.playerChat));
         return payload;
     }
 
@@ -564,6 +579,10 @@ public class Main {
             t.put(v, t.getOrDefault(v, 0) + 1);
         }
         return t;
+    }
+
+    private static List<Map<String, String>> chatPayload(List<ChatMessage> chat) {
+        return chat.stream().map(m -> Map.of("author", m.author, "message", m.message)).toList();
     }
 
     private static String roleDescription(String role) {
@@ -685,6 +704,7 @@ public class Main {
 
         List<Map<String, String>> morningDeaths = new ArrayList<>();
         List<ChatMessage> mafiaChat = new ArrayList<>();
+        List<ChatMessage> playerChat = new ArrayList<>();
 
         void reset() {
             phase = "lobby";
@@ -704,6 +724,7 @@ public class Main {
             dayVotes = new HashMap<>();
             morningDeaths = new ArrayList<>();
             mafiaChat = new ArrayList<>();
+            playerChat = new ArrayList<>();
         }
     }
 
