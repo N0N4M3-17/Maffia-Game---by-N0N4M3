@@ -21,7 +21,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 public class Main {
@@ -44,11 +44,8 @@ public class Main {
     private static void handleRequest(HttpExchange ex) throws IOException {
         try {
             String path = ex.getRequestURI().getPath();
-            if (path.startsWith("/api/")) {
-                handleApi(ex, path);
-            } else {
-                serveStatic(ex, path);
-            }
+            if (path.startsWith("/api/")) handleApi(ex, path);
+            else serveStatic(ex, path);
         } catch (Exception err) {
             writeJson(ex, 500, Map.of("error", "Internal server error: " + err.getMessage()));
         } finally {
@@ -66,6 +63,8 @@ public class Main {
         }
 
         synchronized (LOCK) {
+            tickPhaseTransitions();
+
             if ("GET".equals(method) && "/api/gm-state".equals(path)) {
                 writeJson(ex, 200, gmStatePayload());
                 return;
@@ -86,7 +85,9 @@ public class Main {
                     writeJson(ex, 400, Map.of("error", "Name max length is 24."));
                     return;
                 }
-                Player p = new Player(UUID.randomUUID().toString(), name);
+                String id = generateSessionId(name);
+                while (findPlayer(id) != null) id = generateSessionId(name);
+                Player p = new Player(id, name);
                 STATE.players.add(p);
                 writeJson(ex, 201, Map.of("playerId", p.id));
                 return;
@@ -109,13 +110,36 @@ public class Main {
                     writeJson(ex, 409, Map.of("error", "Cannot update config after game start."));
                     return;
                 }
-                RoleConfig cfg = new RoleConfig(intValue(b, "mafia"), intValue(b, "sheriff"), intValue(b, "doctor"), intValue(b, "vigilante"), intValue(b, "town"), b.has("vigilanteShots") ? b.get("vigilanteShots").getAsInt() : 1);
+                RoleConfig cfg = new RoleConfig(
+                        intValue(b, "mafia"), intValue(b, "sheriff"), intValue(b, "doctor"),
+                        intValue(b, "vigilante"), intValue(b, "town"),
+                        b.has("vigilanteShots") ? b.get("vigilanteShots").getAsInt() : 1
+                );
                 if (!cfg.valid()) {
                     writeJson(ex, 400, Map.of("error", "All role values must be integers >= 0 (vigilanteShots >= 0)."));
                     return;
                 }
                 STATE.config = cfg;
                 writeJson(ex, 200, Map.of("ok", true, "config", cfg.toMap(), "expectedRoleTotal", rolePool(cfg).size()));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/gm/settings".equals(path)) {
+                JsonObject b = readBodyJson(ex);
+                TimerSettings t = new TimerSettings(
+                        positiveSecondOrDefault(b, "nightMafiaSec", STATE.timerSettings.nightMafiaSec),
+                        positiveSecondOrDefault(b, "nightSheriffSec", STATE.timerSettings.nightSheriffSec),
+                        positiveSecondOrDefault(b, "nightDoctorSec", STATE.timerSettings.nightDoctorSec),
+                        positiveSecondOrDefault(b, "nightVigilanteSec", STATE.timerSettings.nightVigilanteSec),
+                        positiveSecondOrDefault(b, "morningSec", STATE.timerSettings.morningSec),
+                        positiveSecondOrDefault(b, "discussionSec", STATE.timerSettings.discussionSec),
+                        positiveSecondOrDefault(b, "dayVoteSec", STATE.timerSettings.dayVoteSec)
+                );
+                STATE.timerSettings = t;
+                if (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase)) {
+                    STATE.phaseEndsAt = System.currentTimeMillis() + (phaseDurationSec(STATE.phase) * 1000L);
+                }
+                writeJson(ex, 200, Map.of("ok", true, "timerSettings", t.toMap()));
                 return;
             }
 
@@ -135,16 +159,16 @@ public class Main {
             }
 
             if ("POST".equals(method) && "/api/gm/next-phase".equals(path)) {
-                nextPhase();
+                nextPhaseInternal();
                 writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
                 return;
             }
 
             if ("POST".equals(method) && "/api/gm/start-discussion".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                int sec = b.has("seconds") ? b.get("seconds").getAsInt() : 300;
-                STATE.phase = "discussion";
-                STATE.discussionEndsAt = System.currentTimeMillis() + (Math.max(10, sec) * 1000L);
+                int sec = b.has("seconds") ? Math.max(1, b.get("seconds").getAsInt()) : STATE.timerSettings.discussionSec;
+                STATE.timerSettings.discussionSec = sec;
+                setPhase("discussion");
                 writeJson(ex, 200, Map.of("ok", true));
                 return;
             }
@@ -236,6 +260,34 @@ public class Main {
         writeJson(ex, 404, Map.of("error", "API route not found."));
     }
 
+    private static void tickPhaseTransitions() {
+        int guard = 0;
+        while (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.phaseEndsAt > 0 && System.currentTimeMillis() >= STATE.phaseEndsAt && guard < 8) {
+            nextPhaseInternal();
+            guard += 1;
+        }
+    }
+
+    private static int phaseDurationSec(String phase) {
+        return switch (phase) {
+            case "night0" -> STATE.timerSettings.nightMafiaSec;
+            case "night_mafia" -> STATE.timerSettings.nightMafiaSec;
+            case "night_sheriff" -> STATE.timerSettings.nightSheriffSec;
+            case "night_doctor" -> STATE.timerSettings.nightDoctorSec;
+            case "night_vigilante" -> STATE.timerSettings.nightVigilanteSec;
+            case "morning" -> STATE.timerSettings.morningSec;
+            case "discussion" -> STATE.timerSettings.discussionSec;
+            case "day_vote" -> STATE.timerSettings.dayVoteSec;
+            default -> 0;
+        };
+    }
+
+    private static void setPhase(String phase) {
+        STATE.phase = phase;
+        int sec = phaseDurationSec(phase);
+        STATE.phaseEndsAt = sec > 0 ? System.currentTimeMillis() + sec * 1000L : 0L;
+    }
+
     private static void startGame(HttpExchange ex) throws IOException {
         if (!"lobby".equals(STATE.phase)) {
             writeJson(ex, 409, Map.of("error", "Game already started."));
@@ -265,14 +317,14 @@ public class Main {
             p.vigilanteShotsRemaining = "Vigilante".equals(p.role) ? STATE.config.vigilanteShots : 0;
         }
 
-        STATE.phase = "night0";
         STATE.round = 0;
+        STATE.winner = null;
+        setPhase("night0");
         writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
     }
 
     private static void beginNight() {
         STATE.round += 1;
-        STATE.phase = "night_mafia";
         STATE.nightStep = "mafia";
         STATE.mafiaVotes.clear();
         STATE.sheriffTarget = null;
@@ -280,23 +332,23 @@ public class Main {
         STATE.vigilanteTarget = null;
         STATE.dayVotes.clear();
         STATE.morningDeaths = new ArrayList<>();
-        STATE.discussionEndsAt = 0L;
+        setPhase("night_mafia");
     }
 
-    private static void nextPhase() {
+    private static void nextPhaseInternal() {
         if ("game_over".equals(STATE.phase)) return;
         switch (STATE.phase) {
             case "night0" -> beginNight();
-            case "night_mafia" -> STATE.phase = aliveRoleExists("Sheriff") ? "night_sheriff" : (aliveRoleExists("Doctor") ? "night_doctor" : (aliveRoleExists("Vigilante") ? "night_vigilante" : "morning"));
-            case "night_sheriff" -> STATE.phase = aliveRoleExists("Doctor") ? "night_doctor" : (aliveRoleExists("Vigilante") ? "night_vigilante" : "morning");
-            case "night_doctor" -> STATE.phase = aliveRoleExists("Vigilante") ? "night_vigilante" : "morning";
+            case "night_mafia" -> setPhase(aliveRoleExists("Sheriff") ? "night_sheriff" : (aliveRoleExists("Doctor") ? "night_doctor" : (aliveRoleExists("Vigilante") ? "night_vigilante" : "morning")));
+            case "night_sheriff" -> setPhase(aliveRoleExists("Doctor") ? "night_doctor" : (aliveRoleExists("Vigilante") ? "night_vigilante" : "morning"));
+            case "night_doctor" -> setPhase(aliveRoleExists("Vigilante") ? "night_vigilante" : "morning");
             case "night_vigilante" -> {
                 resolveNight();
-                STATE.phase = "morning";
+                setPhase("morning");
                 checkWin();
             }
-            case "morning" -> STATE.phase = "discussion";
-            case "discussion" -> STATE.phase = "day_vote";
+            case "morning" -> setPhase("discussion");
+            case "discussion" -> setPhase("day_vote");
             case "day_vote" -> {
                 resolveDayVote();
                 checkWin();
@@ -313,11 +365,8 @@ public class Main {
         String mafiaTarget = majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size());
         String vigTarget = STATE.vigilanteTarget;
         Player vig = aliveByRole("Vigilante");
-        if (vig != null && vigTarget != null && !vigTarget.isBlank() && vig.vigilanteShotsRemaining > 0) {
-            vig.vigilanteShotsRemaining -= 1;
-        } else {
-            vigTarget = null;
-        }
+        if (vig != null && vigTarget != null && !vigTarget.isBlank() && vig.vigilanteShotsRemaining > 0) vig.vigilanteShotsRemaining -= 1;
+        else vigTarget = null;
 
         List<String> deaths = new ArrayList<>();
         if (mafiaTarget != null && !mafiaTarget.equals(protectedId)) deaths.add(mafiaTarget);
@@ -341,9 +390,7 @@ public class Main {
                 p.alive = false;
                 STATE.morningDeaths = List.of(Map.of("id", p.id, "name", p.name, "role", p.role));
             }
-        } else {
-            STATE.morningDeaths = new ArrayList<>();
-        }
+        } else STATE.morningDeaths = new ArrayList<>();
     }
 
     private static void checkWin() {
@@ -352,15 +399,16 @@ public class Main {
         if (mafiaAlive == 0) {
             STATE.phase = "game_over";
             STATE.winner = "Town";
+            STATE.phaseEndsAt = 0;
         } else if (mafiaAlive >= townAlive) {
             STATE.phase = "game_over";
             STATE.winner = "Mafia";
+            STATE.phaseEndsAt = 0;
         }
     }
 
-    private static String majorityTarget(Map<String, String> voteMap, int neededMafiaVoters) {
-        int needed = majorityThreshold(neededMafiaVoters);
-        return majorityTarget(voteMap, needed, false);
+    private static String majorityTarget(Map<String, String> voteMap, int voterCount) {
+        return majorityTarget(voteMap, majorityThreshold(voterCount), false);
     }
 
     private static String majorityTarget(Map<String, String> voteMap, int needed, boolean allowNullVotes) {
@@ -378,9 +426,7 @@ public class Main {
                 best = e.getKey();
                 bestCount = e.getValue();
                 tie = false;
-            } else if (e.getValue() == bestCount) {
-                tie = true;
-            }
+            } else if (e.getValue() == bestCount) tie = true;
         }
         if (bestCount < needed || tie) return null;
         return best;
@@ -417,12 +463,13 @@ public class Main {
         payload.put("phase", STATE.phase);
         payload.put("round", STATE.round);
         payload.put("nightStep", STATE.nightStep);
+        payload.put("phaseRemainingSec", phaseRemainingSec());
         payload.put("players", players);
         payload.put("playerCount", STATE.players.size());
         payload.put("aliveCount", aliveCount());
         payload.put("config", STATE.config.toMap());
+        payload.put("timerSettings", STATE.timerSettings.toMap());
         payload.put("expectedRoleTotal", rolePool(STATE.config).size());
-        payload.put("discussionRemainingSec", STATE.phase.equals("discussion") && STATE.discussionEndsAt > 0 ? Math.max(0, (STATE.discussionEndsAt - System.currentTimeMillis()) / 1000) : 0);
         payload.put("morningDeaths", STATE.morningDeaths);
         payload.put("winner", STATE.winner);
         payload.put("lastSheriffResult", STATE.lastSheriffResult);
@@ -441,11 +488,13 @@ public class Main {
             row.put("revealedRole", other.alive ? null : other.role);
             players.add(row);
         }
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", p.id);
         payload.put("name", p.name);
         payload.put("phase", STATE.phase);
         payload.put("alive", p.alive);
+        payload.put("phaseRemainingSec", phaseRemainingSec());
         payload.put("role", "lobby".equals(STATE.phase) ? null : p.role);
         payload.put("roleDescription", roleDescription(p.role));
         payload.put("vigilanteShotsRemaining", p.vigilanteShotsRemaining);
@@ -453,14 +502,20 @@ public class Main {
         payload.put("players", players);
         payload.put("morningDeaths", STATE.morningDeaths);
         payload.put("winner", STATE.winner);
-        payload.put("discussionRemainingSec", STATE.phase.equals("discussion") && STATE.discussionEndsAt > 0 ? Math.max(0, (STATE.discussionEndsAt - System.currentTimeMillis()) / 1000) : 0);
+        payload.put("mafiaVoteCurrent", STATE.mafiaVotes.get(p.id));
+        payload.put("dayVoteCurrent", STATE.dayVotes.get(p.id));
+        payload.put("timerSettings", STATE.timerSettings.toMap());
+
         if ("Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase)) {
             List<Map<String, String>> chat = STATE.mafiaChat.stream().map(m -> Map.of("author", m.author, "message", m.message)).toList();
             payload.put("mafiaChat", chat);
-        } else {
-            payload.put("mafiaChat", List.of());
-        }
+        } else payload.put("mafiaChat", List.of());
         return payload;
+    }
+
+    private static long phaseRemainingSec() {
+        if (STATE.phaseEndsAt <= 0) return 0;
+        return Math.max(0, (STATE.phaseEndsAt - System.currentTimeMillis()) / 1000);
     }
 
     private static Map<String, Integer> tally(Map<String, String> votes) {
@@ -483,6 +538,13 @@ public class Main {
         };
     }
 
+    private static String generateSessionId(String name) {
+        String safe = name.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+        if (safe.isBlank()) safe = "player";
+        int rand = ThreadLocalRandom.current().nextInt(1, 101);
+        return safe + "-" + rand;
+    }
+
     private static Player findPlayer(String id) {
         for (Player p : STATE.players) if (p.id.equals(id)) return p;
         return null;
@@ -493,6 +555,10 @@ public class Main {
     }
 
     private static int intValue(JsonObject body, String key) { return body.has(key) ? body.get(key).getAsInt() : -1; }
+    private static int positiveSecondOrDefault(JsonObject body, String key, int fallback) {
+        if (!body.has(key)) return fallback;
+        return Math.max(1, body.get(key).getAsInt());
+    }
 
     private static List<String> rolePool(RoleConfig cfg) {
         List<String> pool = new ArrayList<>();
@@ -566,10 +632,11 @@ public class Main {
         String winner = null;
         String lastError = null;
         String lastSheriffResult = null;
-        long discussionEndsAt = 0L;
+        long phaseEndsAt = 0L;
 
         List<Player> players = new ArrayList<>();
         RoleConfig config = new RoleConfig(2, 1, 1, 0, 1, 1);
+        TimerSettings timerSettings = new TimerSettings(60, 60, 60, 60, 60, 60, 60);
 
         Map<String, String> mafiaVotes = new HashMap<>();
         String sheriffTarget = null;
@@ -587,9 +654,10 @@ public class Main {
             winner = null;
             lastError = null;
             lastSheriffResult = null;
-            discussionEndsAt = 0L;
+            phaseEndsAt = 0L;
             players = new ArrayList<>();
             config = new RoleConfig(2, 1, 1, 0, 1, 1);
+            timerSettings = new TimerSettings(60, 60, 60, 60, 60, 60, 60);
             mafiaVotes = new HashMap<>();
             sheriffTarget = null;
             doctorTarget = null;
@@ -607,9 +675,7 @@ public class Main {
             this.mafia = mafia; this.sheriff = sheriff; this.doctor = doctor; this.vigilante = vigilante; this.town = town; this.vigilanteShots = vigilanteShots;
         }
 
-        boolean valid() {
-            return mafia >= 0 && sheriff >= 0 && doctor >= 0 && vigilante >= 0 && town >= 0 && vigilanteShots >= 0;
-        }
+        boolean valid() { return mafia >= 0 && sheriff >= 0 && doctor >= 0 && vigilante >= 0 && town >= 0 && vigilanteShots >= 0; }
 
         Map<String, Integer> toMap() {
             Map<String, Integer> map = new LinkedHashMap<>();
@@ -620,6 +686,32 @@ public class Main {
             map.put("town", town);
             map.put("vigilanteShots", vigilanteShots);
             return map;
+        }
+    }
+
+    private static final class TimerSettings {
+        int nightMafiaSec, nightSheriffSec, nightDoctorSec, nightVigilanteSec, morningSec, discussionSec, dayVoteSec;
+
+        TimerSettings(int nightMafiaSec, int nightSheriffSec, int nightDoctorSec, int nightVigilanteSec, int morningSec, int discussionSec, int dayVoteSec) {
+            this.nightMafiaSec = nightMafiaSec;
+            this.nightSheriffSec = nightSheriffSec;
+            this.nightDoctorSec = nightDoctorSec;
+            this.nightVigilanteSec = nightVigilanteSec;
+            this.morningSec = morningSec;
+            this.discussionSec = discussionSec;
+            this.dayVoteSec = dayVoteSec;
+        }
+
+        Map<String, Integer> toMap() {
+            Map<String, Integer> m = new LinkedHashMap<>();
+            m.put("nightMafiaSec", nightMafiaSec);
+            m.put("nightSheriffSec", nightSheriffSec);
+            m.put("nightDoctorSec", nightDoctorSec);
+            m.put("nightVigilanteSec", nightVigilanteSec);
+            m.put("morningSec", morningSec);
+            m.put("discussionSec", discussionSec);
+            m.put("dayVoteSec", dayVoteSec);
+            return m;
         }
     }
 
