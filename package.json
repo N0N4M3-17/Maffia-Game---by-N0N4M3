@@ -1,0 +1,11 @@
+{
+  "name": "maffia-game-lan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LAN browser-hosted Mafia game with GM lobby and Night 0 role push",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}
