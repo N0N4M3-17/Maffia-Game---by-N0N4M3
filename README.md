@@ -21,7 +21,7 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - Java backend host for LAN browser play.
 - GM-hosted LAN lobby in browser.
 - Players join with **name only**.
-- GM configures role counts.
+- GM configures role counts (including Town manually).
 - GM starts game into **Night 0**.
 - Testing launch rules: minimum 3 players, with at least 1 Mafia, 1 Sheriff/Doctor/Vigilante, and 1 Town.
 - Roles are pushed to each player privately in their client on Night 0.

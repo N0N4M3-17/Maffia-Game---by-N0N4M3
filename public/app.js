@@ -1,7 +1,8 @@
 const state = {
   playerId: localStorage.getItem('playerId') || null,
   playerRole: null,
-  roles: { mafia: 1, sheriff: 1, doctor: 0, vigilante: 0 },
+  roles: { mafia: 1, sheriff: 1, doctor: 0, vigilante: 0, town: 1 },
+  roleDirty: false,
   gmPoll: null,
   playerPoll: null,
   lanUrls: [],
@@ -9,10 +10,7 @@ const state = {
 };
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
@@ -22,14 +20,9 @@ function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach((el) => el.classList.remove('active'));
   const next = document.getElementById(screenId);
   if (next) next.classList.add('active');
-
-  if (screenId === 'screen-gm-setup') {
-    startGmPolling();
-  } else if (screenId === 'screen-night0-player' || screenId === 'screen-player-join') {
-    startPlayerPolling();
-  } else {
-    stopPolling();
-  }
+  if (screenId === 'screen-gm-setup') startGmPolling();
+  else if (screenId === 'screen-night0-player' || screenId === 'screen-player-join') startPlayerPolling();
+  else stopPolling();
 }
 
 function stopPolling() {
@@ -56,6 +49,38 @@ function roleCardClass(role) {
   return 'special';
 }
 
+function roleTotal() {
+  return state.roles.mafia + state.roles.sheriff + state.roles.doctor + state.roles.vigilante + state.roles.town;
+}
+
+function updateRoleInputs() {
+  document.getElementById('mafia-count').textContent = String(state.roles.mafia);
+  document.getElementById('sheriff-count').textContent = String(state.roles.sheriff);
+  document.getElementById('doctor-count').textContent = String(state.roles.doctor);
+  document.getElementById('vigilante-count').textContent = String(state.roles.vigilante);
+  document.getElementById('town-count').textContent = String(state.roles.town);
+}
+
+function updateValidation(playerCount) {
+  const total = roleTotal();
+  document.getElementById('total-roles').textContent = String(total);
+
+  const hasPower = state.roles.sheriff + state.roles.doctor + state.roles.vigilante >= 1;
+  const validComposition = state.roles.mafia >= 1 && hasPower && state.roles.town >= 1;
+  const valid = playerCount >= 3 && validComposition && total === playerCount;
+
+  const status = document.getElementById('validation-status');
+  status.className = `mt-2 text-sm ${valid ? 'text-green-400' : 'text-yellow-300'}`;
+
+  if (valid) {
+    status.textContent = 'Ready to start. (Testing min is 3 players)';
+  } else if (total !== playerCount) {
+    status.textContent = `Role total (${total}) must equal connected players (${playerCount}).`;
+  } else {
+    status.textContent = 'Need at least 3 players, with >=1 Mafia, >=1 Sheriff/Doctor/Vigilante, and >=1 Town.';
+  }
+}
+
 async function refreshGm() {
   try {
     const [info, gm] = await Promise.all([api('/api/server-info'), api('/api/gm-state')]);
@@ -73,16 +98,19 @@ async function refreshGm() {
       ? gm.players.map((p) => `<div class="player-row flex items-center justify-between p-3 bg-midnight rounded-lg"><span>${p.name}</span><span class="text-xs ${p.alive ? 'text-green-400' : 'text-red-400'}">${p.alive ? 'Ready' : 'Dead'}</span></div>`).join('')
       : '<p class="text-mist text-sm">No players joined yet.</p>';
 
-    // pull server config to keep UI in sync when refreshed
-    if (gm.phase === 'lobby') {
-      state.roles.mafia = gm.config.mafia;
-      state.roles.sheriff = gm.config.sheriff;
-      state.roles.doctor = gm.config.doctor;
-      state.roles.vigilante = gm.config.vigilante;
+    // Important: do not clobber unsaved UI edits from polling.
+    if (gm.phase === 'lobby' && !state.roleDirty) {
+      state.roles = {
+        mafia: gm.config.mafia,
+        sheriff: gm.config.sheriff,
+        doctor: gm.config.doctor,
+        vigilante: gm.config.vigilante,
+        town: gm.config.town,
+      };
       updateRoleInputs();
     }
 
-    updateTownAndValidation(gm.playerCount);
+    updateValidation(gm.playerCount);
   } catch (err) {
     const msg = document.getElementById('gm-msg');
     if (msg) msg.textContent = err.message;
@@ -153,45 +181,18 @@ function startPlayerPolling() {
 }
 
 function adjustRole(role, delta) {
-  state.roles[role] = Math.max(0, Math.min(10, state.roles[role] + delta));
+  state.roles[role] = Math.max(0, Math.min(20, state.roles[role] + delta));
+  state.roleDirty = true;
   updateRoleInputs();
-  updateTownAndValidation(Number(document.getElementById('player-count').textContent || 0));
-}
-
-function updateRoleInputs() {
-  document.getElementById('mafia-count').textContent = String(state.roles.mafia);
-  document.getElementById('sheriff-count').textContent = String(state.roles.sheriff);
-  document.getElementById('doctor-count').textContent = String(state.roles.doctor);
-  document.getElementById('vigilante-count').textContent = String(state.roles.vigilante);
-}
-
-function calculatedTown(playerCount) {
-  const specialTotal = state.roles.mafia + state.roles.sheriff + state.roles.doctor + state.roles.vigilante;
-  return Math.max(0, playerCount - specialTotal);
-}
-
-function updateTownAndValidation(playerCount) {
-  const town = calculatedTown(playerCount);
-  const total = state.roles.mafia + state.roles.sheriff + state.roles.doctor + state.roles.vigilante + town;
-  document.getElementById('town-count').textContent = String(town);
-  document.getElementById('total-roles').textContent = String(total);
-
-  const hasPower = state.roles.sheriff + state.roles.doctor + state.roles.vigilante >= 1;
-  const valid = playerCount >= 3 && state.roles.mafia >= 1 && town >= 1 && hasPower && total === playerCount;
-  const status = document.getElementById('validation-status');
-  status.className = `mt-2 text-sm ${valid ? 'text-green-400' : 'text-yellow-300'}`;
-  status.textContent = valid
-    ? 'Ready to start (testing rules satisfied).'
-    : 'Need >=3 players, 1 Mafia, 1 Sheriff/Doctor/Vigilante, 1 Town.';
+  updateValidation(Number(document.getElementById('player-count').textContent || 0));
 }
 
 async function saveSetup() {
-  const playerCount = Number(document.getElementById('player-count').textContent || 0);
-  const town = calculatedTown(playerCount);
-  const payload = { ...state.roles, town };
+  const payload = { ...state.roles };
   const msg = document.getElementById('gm-msg');
   try {
     await api('/api/gm/config', { method: 'POST', body: JSON.stringify(payload) });
+    state.roleDirty = false;
     msg.textContent = `Setup saved: ${payload.mafia} Mafia, ${payload.sheriff} Sheriff, ${payload.doctor} Doctor, ${payload.vigilante} Vigilante, ${payload.town} Town.`;
     await refreshGm();
   } catch (e) {
@@ -203,7 +204,6 @@ async function saveSetup() {
 async function launchGame() {
   const msg = document.getElementById('gm-msg');
   try {
-    // Fixes stale-config launch bug: always save current stepper values right before start.
     await saveSetup();
     await api('/api/gm/start', { method: 'POST', body: '{}' });
     msg.textContent = 'Game launched. Night 0 is live.';
@@ -217,7 +217,8 @@ async function resetLobby() {
   const msg = document.getElementById('gm-msg');
   await api('/api/gm/reset', { method: 'POST', body: '{}' });
   msg.textContent = 'Lobby reset.';
-  state.roles = { mafia: 1, sheriff: 1, doctor: 0, vigilante: 0 };
+  state.roles = { mafia: 1, sheriff: 1, doctor: 0, vigilante: 0, town: 1 };
+  state.roleDirty = false;
   updateRoleInputs();
   await refreshGm();
 }
@@ -254,6 +255,7 @@ window.copyToClipboard = copyToClipboard;
 
 (function init() {
   updateRoleInputs();
+  updateValidation(0);
   if (state.playerId) {
     showScreen('screen-player-join');
     startPlayerPolling();
