@@ -159,8 +159,12 @@ public class Main {
                     writeJson(exchange, 409, Map.of("error", "Game already started."));
                     return;
                 }
-                if (STATE.players.size() < 4) {
-                    writeJson(exchange, 400, Map.of("error", "Need at least 4 players to start."));
+                if (STATE.players.size() < 3) {
+                    writeJson(exchange, 400, Map.of("error", "Need at least 3 players to start (testing mode)."));
+                    return;
+                }
+                if (!hasMinimumTestRoles(STATE.config)) {
+                    writeJson(exchange, 400, Map.of("error", "Testing launch requires: at least 1 Mafia, at least 1 Sheriff/Doctor/Vigilante, and at least 1 Town."));
                     return;
                 }
                 List<String> pool = rolePool(STATE.config);
@@ -222,6 +226,13 @@ public class Main {
             if (p.id.equals(id)) return p;
         }
         return null;
+    }
+
+
+    private static boolean hasMinimumTestRoles(RoleConfig cfg) {
+        return cfg.mafia >= 1
+                && (cfg.sheriff + cfg.doctor + cfg.vigilante) >= 1
+                && cfg.town >= 1;
     }
 
     private static int intValue(JsonObject body, String key) {

@@ -75,6 +75,11 @@ function shuffle(arr) {
   return copy;
 }
 
+
+function hasMinimumTestRoles(config) {
+  return config.mafia >= 1 && (config.sheriff + config.doctor + config.vigilante) >= 1 && config.town >= 1;
+}
+
 function assignRoles() {
   const pool = createRolePool(state.config);
   if (pool.length !== state.players.length) {
@@ -168,7 +173,12 @@ function handleApi(req, res, urlObj) {
 
   if (req.method === 'POST' && urlObj.pathname === '/api/gm/start') {
     if (state.phase !== 'lobby') return json(res, 409, { error: 'Game already started.' });
-    if (state.players.length < 4) return json(res, 400, { error: 'Need at least 4 players to start.' });
+    if (state.players.length < 3) return json(res, 400, { error: 'Need at least 3 players to start (testing mode).' });
+    if (!hasMinimumTestRoles(state.config)) {
+      return json(res, 400, {
+        error: 'Testing launch requires: at least 1 Mafia, at least 1 Sheriff/Doctor/Vigilante, and at least 1 Town.',
+      });
+    }
 
     try {
       assignRoles();
