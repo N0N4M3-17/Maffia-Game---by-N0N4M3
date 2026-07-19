@@ -1625,6 +1625,20 @@ code {
   margin: 8px 0 14px;
 }
 
+.chat-status {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.chat-form.disabled {
+  opacity: .58;
+}
+
+.chat-form.disabled input,
+.chat-form.disabled button {
+  cursor: not-allowed;
+}
+
 .chat-form button {
   background: var(--panel-2);
   border: 1px solid var(--line);

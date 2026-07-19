@@ -65,7 +65,7 @@ assert(backend.includes('pendingActionPlayers') && backend.includes('pendingActi
 assert(backend.includes('adminCount()') && backend.includes('At least one admin account must remain.'), 'admin management must prevent last-admin lockout');
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount())'), 'day vote resolution must use strict majority');
 assert(backend.includes('payload.put("mafiaTeam"'), 'mafia teammate identities must be in private mafia payload');
-assert(backend.includes('PUBLIC_CHAT_PHASES'), 'public chat phase restrictions must be server-side');
+assert(backend.includes('PUBLIC_CHAT_PHASES') && backend.includes('PUBLIC_CHAT_VISIBLE_PHASES'), 'public chat send and visibility restrictions must be server-side');
 assert(backend.includes('final_statements') && backend.includes('finalStatementPlayerIds'), 'final-statements phase must be implemented server-side');
 assert(backend.includes('Final statement already submitted'), 'final statements must be limited to one per eligible player');
 assert(backend.includes('majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null'), 'mafia votes must early-lock on majority');
@@ -98,6 +98,7 @@ assert(app.includes('Doctor rule: you cannot protect the same target') && app.in
 assert(app.includes('sheriffResultMarkup') && app.includes('sheriffResultTargetName') && app.includes('Mafia alignment confirmed'), 'sheriff result visual must be wired');
 assert(app.includes('life-badge'), 'player list must use explicit alive/dead status badges');
 assert(app.includes('gmGuidanceMarkup') && app.includes('playerGuidanceMarkup') && app.includes('Vote submitted'), 'GM and player phase guidance must be wired');
+assert(app.includes('publicChatCanSend') && app.includes('publicChatVisible') && app.includes('player-chat-status'), 'player public chat must reflect server chat permissions');
 assert(app.includes("gm.phase === 'lobby'") && app.includes('gmConsoleMarkup') && !app.includes('textContent = JSON.stringify'), 'GM active-round feed must be rendered as UI instead of raw JSON');
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
 assert(app.includes('pendingActionMarkup') && app.includes('pending-chip'), 'GM console must render current pending action players');
@@ -127,6 +128,7 @@ assert(read('src/main/resources/public/styles.css').includes('.pending-card') &&
 assert(read('src/main/resources/public/styles.css').includes('.gm-action-notice'), 'GM action result notice must be styled as a feed element');
 assert(read('src/main/resources/public/styles.css').includes('.gm-command-shell') && read('src/main/resources/public/styles.css').includes('.gm-event-log') && read('src/main/resources/public/styles.css').includes('.gm-player-card'), 'GM command center scene must be styled with table stage and event log');
 assert(read('src/main/resources/public/styles.css').includes('.seat-remove') && read('src/main/resources/public/styles.css').includes('.manager-seat'), 'host roster seat management must be styled');
+assert(read('src/main/resources/public/styles.css').includes('.chat-status') && read('src/main/resources/public/styles.css').includes('.chat-form.disabled'), 'closed public chat state must be styled');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

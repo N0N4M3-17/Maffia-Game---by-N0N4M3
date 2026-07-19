@@ -1049,9 +1049,17 @@ function renderPlayerList(players) {
 
 function renderChats(ps) {
   const mafiaPanel = $('mafia-chat-panel');
+  const publicVisible = !!ps.publicChatVisible;
+  const publicCanSend = !!ps.publicChatCanSend;
   mafiaPanel.classList.toggle('hidden', !(ps.role === 'Mafia' && ps.phase === 'night_mafia' && ps.alive));
   $('mafia-chat-log').innerHTML = chatLines(ps.mafiaChat || []);
-  $('player-chat-log').innerHTML = chatLines(ps.playerChat || []);
+  $('player-chat-log').innerHTML = publicVisible ? chatLines(ps.playerChat || []) : '<p class="muted">Public chat is hidden during private night actions.</p>';
+  $('player-chat-input').disabled = !publicCanSend;
+  $('player-chat-form').querySelector('button').disabled = !publicCanSend;
+  $('player-chat-form').classList.toggle('disabled', !publicCanSend);
+  $('player-chat-status').textContent = publicCanSend
+    ? 'Public chat is open for alive players.'
+    : (publicVisible ? 'Public chat is read-only right now.' : 'Public chat opens during morning, discussion, and voting.');
 }
 
 function chatLines(items) {
@@ -1098,6 +1106,10 @@ async function submitAction(action) {
 
 async function sendChat(kind) {
   const input = kind === 'mafia' ? $('mafia-chat-input') : $('player-chat-input');
+  if (kind === 'player' && state.lastPlayerState && !state.lastPlayerState.publicChatCanSend) {
+    setMessage('Public chat is closed right now.', true);
+    return;
+  }
   const message = input.value.trim();
   if (!message) return;
   await api(kind === 'mafia' ? '/api/player/mafia-chat' : '/api/player/chat', {

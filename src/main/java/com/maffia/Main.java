@@ -47,7 +47,8 @@ public class Main {
     private static final GameState STATE = new GameState();
     private static final LocalDatabase DB = new LocalDatabase(Path.of("data", "mafia-db.json"));
     private static final SecureRandom RNG = new SecureRandom();
-    private static final List<String> PUBLIC_CHAT_PHASES = List.of("morning", "discussion", "day_vote", "game_over");
+    private static final List<String> PUBLIC_CHAT_PHASES = List.of("morning", "discussion", "day_vote");
+    private static final List<String> PUBLIC_CHAT_VISIBLE_PHASES = List.of("morning", "final_statements", "discussion", "day_vote", "game_over");
     private static final String ADMIN_EMAIL = "gabi17hun@gmail.com";
     private static final String ADMIN_USERNAME = "n0n4m3-admin";
     private static final String ADMIN_PASSWORD = "admin123";
@@ -1102,7 +1103,9 @@ public class Main {
                         })
                         .toList()
                 : List.of());
-        payload.put("playerChat", chatPayload(STATE.playerChat));
+        payload.put("playerChat", PUBLIC_CHAT_VISIBLE_PHASES.contains(STATE.phase) ? chatPayload(STATE.playerChat) : List.of());
+        payload.put("publicChatCanSend", p.alive && PUBLIC_CHAT_PHASES.contains(STATE.phase));
+        payload.put("publicChatVisible", PUBLIC_CHAT_VISIBLE_PHASES.contains(STATE.phase));
         return payload;
     }
 
