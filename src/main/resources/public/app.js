@@ -159,6 +159,8 @@ async function refreshServerInfo() {
   $('local-url').textContent = state.serverInfo.localhost || '';
   $('lan-url').textContent = state.serverInfo.lanUrls?.[0] || 'No LAN address detected';
   $('public-url').textContent = state.serverInfo.publicUrl || 'Set PUBLIC_URL when reverse proxied with HTTPS';
+  $('public-status').textContent = state.serverInfo.publicUrlSecure ? 'HTTPS ready' : 'Not configured';
+  $('public-status').classList.toggle('ok', !!state.serverInfo.publicUrlSecure);
 }
 
 async function refreshRooms() {
@@ -200,6 +202,25 @@ async function joinRoom(roomId) {
   showTab('play');
   await refreshAll();
   setMessage(`Joined ${data.room?.name || 'room'}.`);
+}
+
+async function copyInvite(targetId) {
+  const text = $(targetId)?.textContent?.trim() || '';
+  if (!text || text.startsWith('Set PUBLIC_URL') || text.includes('No LAN address')) {
+    setMessage('No invite link is available for that slot yet.', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const input = document.createElement('input');
+    input.value = text;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+  }
+  setMessage('Invite link copied.');
 }
 
 function roleTotal() {
@@ -586,6 +607,7 @@ function bindEvents() {
   $('logout-btn').addEventListener('click', () => logout().catch((err) => setMessage(err.message, true)));
   $('room-form').addEventListener('submit', (e) => { e.preventDefault(); createRoom(e.currentTarget).catch((err) => setMessage(err.message, true)); });
   $('refresh-rooms-btn').addEventListener('click', () => refreshRooms().catch((err) => setMessage(err.message, true)));
+  document.querySelectorAll('[data-copy-target]').forEach((btn) => btn.addEventListener('click', () => copyInvite(btn.dataset.copyTarget)));
   $('join-default-btn').addEventListener('click', () => {
     const room = state.rooms[0];
     if (room) joinRoom(room.id).catch((err) => setMessage(err.message, true));

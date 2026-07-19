@@ -94,10 +94,28 @@
                 <label>Network mode<select name="networkMode"><option value="local">Local LAN</option><option value="internet">Internet-ready</option></select></label>
                 <button class="primary-button" type="submit">Create room</button>
               </form>
-              <div class="share-box">
-                <span>Local</span><code id="local-url">http://localhost:3000</code>
-                <span>LAN</span><code id="lan-url">Detecting...</code>
-                <span>Public</span><code id="public-url">Set PUBLIC_URL when reverse proxied with HTTPS</code>
+              <div class="share-box" aria-label="Server invite links">
+                <div class="share-row">
+                  <div>
+                    <span>Local host</span>
+                    <code id="local-url">http://localhost:3000</code>
+                  </div>
+                  <button class="ghost-button copy-link" type="button" data-copy-target="local-url">Copy</button>
+                </div>
+                <div class="share-row">
+                  <div>
+                    <span>LAN invite</span>
+                    <code id="lan-url">Detecting...</code>
+                  </div>
+                  <button class="ghost-button copy-link" type="button" data-copy-target="lan-url">Copy</button>
+                </div>
+                <div class="share-row">
+                  <div>
+                    <span>Secure public invite <em id="public-status">Not configured</em></span>
+                    <code id="public-url">Set PUBLIC_URL when reverse proxied with HTTPS</code>
+                  </div>
+                  <button class="ghost-button copy-link" type="button" data-copy-target="public-url">Copy</button>
+                </div>
               </div>
             </section>
           </div>

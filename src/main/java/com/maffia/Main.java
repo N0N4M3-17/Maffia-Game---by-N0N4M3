@@ -85,11 +85,13 @@ public class Main {
 
         if ("GET".equals(method) && "/api/server-info".equals(path)) {
             int port = ex.getLocalAddress().getPort();
+            String publicUrl = System.getenv().getOrDefault("PUBLIC_URL", "");
             writeJson(ex, 200, Map.of(
                     "port", port,
                     "localhost", "http://localhost:" + port,
                     "lanUrls", getLanUrls(port),
-                    "publicUrl", System.getenv().getOrDefault("PUBLIC_URL", "")
+                    "publicUrl", publicUrl,
+                    "publicUrlSecure", publicUrl.startsWith("https://")
             ));
             return;
         }

@@ -43,6 +43,16 @@ Keep the `data/` folder local and out of git.
 
 The current host runs one active game table at a time. Creating a named room makes it the active table when no lobby/game is in progress. Players can join the active room locally through the LAN URL, or through the configured public URL when the host is placed behind a secure HTTPS tunnel or reverse proxy.
 
+### Secure public invite
+
+For internet play, run the Java host behind an HTTPS tunnel or reverse proxy and start it with `PUBLIC_URL` set to the public HTTPS origin. Example:
+
+```bash
+PUBLIC_URL=https://your-secure-host.example mvn exec:java
+```
+
+The Rooms screen will show that URL as the secure public invite. Do not expose the plain LAN host directly to the internet without HTTPS and firewall controls.
+
 ## Current Spec Drafts
 
 - [Spec v1 (Sections 1–2): Phase State Machine + Role Permission Matrix](docs/SPEC_V1.md)

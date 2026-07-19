@@ -386,17 +386,53 @@ code {
 .share-box {
   margin-top: 16px;
   display: grid;
-  gap: 7px;
+  gap: 10px;
   padding: 12px;
   border-radius: 8px;
   background: #121722;
   border: 1px solid var(--line);
 }
 
+.share-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.share-row > div {
+  min-width: 0;
+}
+
 .share-box span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
+}
+
+.share-box em {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(207, 74, 74, .14);
+  color: var(--red-2);
+  font-style: normal;
+  text-transform: none;
+}
+
+.share-box em.ok {
+  background: rgba(89, 194, 137, .16);
+  color: var(--green);
+}
+
+.copy-link {
+  min-width: 70px;
 }
 
 .role-controls, .timer-controls {
