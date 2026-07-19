@@ -726,22 +726,7 @@ public class Main {
         if ("game_over".equals(STATE.phase)) return;
         switch (STATE.phase) {
             case "night0" -> beginNight();
-            case "night_mafia" -> {
-                if (aliveRoleExists("Sheriff")) setPhase("night_sheriff");
-                else if (aliveRoleExists("Doctor")) setPhase("night_doctor");
-                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_sheriff" -> {
-                if (aliveRoleExists("Doctor")) setPhase("night_doctor");
-                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_doctor" -> {
-                if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_vigilante" -> endNightAndEnterMorning();
+            case "night_mafia", "night_sheriff", "night_doctor", "night_vigilante" -> advanceNightRolePhase();
             case "morning" -> {
                 STATE.afterFinalStatementsPhase = "discussion";
                 if (!STATE.finalStatementPlayerIds.isEmpty()) setPhase("final_statements");
@@ -762,6 +747,17 @@ public class Main {
                 }
             }
         }
+    }
+
+    private static void advanceNightRolePhase() {
+        String next = GameRules.nextNightRolePhase(
+                STATE.phase,
+                aliveRoleExists("Sheriff"),
+                aliveRoleExists("Doctor"),
+                aliveRoleExists("Vigilante")
+        );
+        if (next == null) endNightAndEnterMorning();
+        else setPhase(next);
     }
 
     private static void endNightAndEnterMorning() {
