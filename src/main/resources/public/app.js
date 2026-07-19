@@ -275,6 +275,9 @@ function renderTimerControls() {
   $('timer-controls').innerHTML = Object.keys(timerLabels).map((key) => `
     <label>${timerLabels[key]}<input id="set-${key}" type="number" min="1" value="${state.timerSettings[key]}"></label>
   `).join('');
+  $('timer-controls').querySelectorAll('input').forEach((input) => input.addEventListener('input', () => {
+    state.settingsDirty = true;
+  }));
 }
 
 function adjustRole(role, delta) {
@@ -357,10 +360,13 @@ async function resetLobby() {
 
 async function refreshGm() {
   const gm = await api('/api/gm-state');
+  const visiblePlayers = gmVisiblePlayers(gm);
   const hostTab = document.querySelector('[data-tab="host"]');
   if (hostTab) hostTab.classList.toggle('hidden', !gm.canManage);
   if (!gm.canManage && document.querySelector('#tab-host.active')) showTab('play');
   const setupVisible = gm.phase === 'lobby';
+  const hostGrid = document.querySelector('#tab-host .host-grid');
+  if (hostGrid) hostGrid.classList.toggle('gm-command-view', !setupVisible);
   $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
   $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
@@ -371,7 +377,7 @@ async function refreshGm() {
   $('next-phase-btn').disabled = gm.phase === 'game_over';
   $('return-lobby-btn').classList.toggle('hidden', gm.phase !== 'game_over');
   $('room-kicker').textContent = gm.room?.name || 'Table One';
-  $('roster-count').textContent = String(gm.playerCount);
+  $('roster-count').textContent = setupVisible ? String(gm.playerCount) : String(visiblePlayers.length);
   if (gm.phase === 'lobby' && !state.roleDirty) {
     state.roles = {
       mafia: gm.config.mafia,
@@ -390,13 +396,69 @@ async function refreshGm() {
     renderTimerControls();
   }
   updateValidation(gm.playerCount);
-  renderRoster(gm.players || []);
+  renderRoster(setupVisible ? (gm.players || []) : visiblePlayers, gm.canManage && setupVisible);
   $('gm-phase-guide').innerHTML = gmGuidanceMarkup(gm);
   $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
+  $('gm-action-status').querySelectorAll('[data-gm-button]').forEach((button) => {
+    if (button.dataset.gmButton === 'next') button.addEventListener('click', () => gmNextPhase().catch((err) => setMessage(err.message, true)));
+    if (button.dataset.gmButton === 'night') button.addEventListener('click', () => gmStartNight().catch((err) => setMessage(err.message, true)));
+    if (button.dataset.gmButton === 'void') button.addEventListener('click', () => gmVoidGame().catch((err) => setMessage(err.message, true)));
+  });
 }
 
 function statCard(label, value, tone = '') {
   return `<div class="stat-card ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function gmVisiblePlayers(gm) {
+  const accountId = state.account?.id;
+  const players = gm.players || [];
+  if (!gm.canManage || !accountId) return players;
+  return players.filter((player) => player.accountId !== accountId);
+}
+
+function gmEventLines(gm, players) {
+  const lines = [];
+  const phase = phaseTitle(gm.phase, gm.round);
+  lines.push({ time: 'now', tone: 'gold', text: `${phase} active` });
+  if (gm.actionNoticeTitle) lines.push({ time: 'now', tone: 'red', text: `${gm.actionNoticeTitle}: ${gm.actionNoticeBody || ''}` });
+  if (gm.lastSheriffResult) lines.push({ time: 'last', tone: 'blue', text: gm.lastSheriffResult });
+  (gm.morningDeaths || []).forEach((death) => lines.push({ time: 'night', tone: 'red', text: `${death.name} died (${death.role || 'unknown'})` }));
+  (gm.mafiaChat || []).slice(-3).forEach((message) => lines.push({ time: 'mafia', tone: 'red', text: `${message.author}: ${message.message}` }));
+  (gm.playerChat || []).slice(-3).forEach((message) => lines.push({ time: 'chat', tone: '', text: `${message.author}: ${message.message}` }));
+  if (!lines.length) lines.push({ time: '--', tone: '', text: `${players.length} player(s) seated` });
+  return lines.slice(-9).map((line) => `
+    <div class="gm-log-line ${line.tone}">
+      <span>${escapeHtml(line.time)}</span>
+      <strong>${escapeHtml(line.text)}</strong>
+    </div>
+  `).join('');
+}
+
+function gmRoleDistribution(players) {
+  const counts = players.reduce((acc, player) => {
+    const role = player.role || 'Unassigned';
+    acc[role] = (acc[role] || 0) + 1;
+    return acc;
+  }, {});
+  const roles = ['Mafia', 'Sheriff', 'Doctor', 'Vigilante', 'Town', 'Unassigned'];
+  return roles.filter((role) => counts[role]).map((role) => `
+    <div class="gm-role-row ${role.toLowerCase()}">
+      <span>${roleIcon(role)} ${escapeHtml(role)}</span>
+      <strong>${counts[role]}</strong>
+    </div>
+  `).join('') || '<p class="muted">No roles dealt yet.</p>';
+}
+
+function gmPlayerCard(player) {
+  return `
+    <article class="gm-player-card ${player.alive ? 'alive' : 'dead'} ${String(player.role || '').toLowerCase()}">
+      <div class="gm-player-token">${escapeHtml(initials(player.name).slice(0, 1))}</div>
+      <strong>${escapeHtml(player.name)}</strong>
+      <span>${escapeHtml(player.role || 'Waiting')}</span>
+      <em>${player.alive ? 'Alive' : 'Dead'}</em>
+    </article>
+  `;
 }
 
 function chatPreview(title, messages) {
@@ -422,8 +484,31 @@ function tallyMarkup(title, tally, players) {
   `;
 }
 
+function pendingActionMarkup(gm) {
+  const pending = gm.pendingActionPlayers || [];
+  const actionName = gm.currentActionName || 'Current action';
+  const notice = gm.actionNoticeTitle ? `
+    <div class="gm-action-notice">
+      <strong>${escapeHtml(gm.actionNoticeTitle)}</strong>
+      <span>${escapeHtml(gm.actionNoticeBody || '')}</span>
+    </div>
+  ` : '';
+  const body = pending.length
+    ? pending.map((name) => `<span class="pending-chip">${escapeHtml(name)}</span>`).join('')
+    : '<p class="muted">No one is pending right now.</p>';
+  return `
+    <section class="feed-card pending-card">
+      <h4>${escapeHtml(actionName)}</h4>
+      ${notice}
+      <div class="pending-list">${body}</div>
+    </section>
+  `;
+}
+
 function gmConsoleMarkup(gm) {
-  const players = gm.players || [];
+  const players = gmVisiblePlayers(gm);
+  const alive = players.filter((player) => player.alive).length;
+  const dead = Math.max(0, players.length - alive);
   const deaths = gm.morningDeaths?.length
     ? gm.morningDeaths.map((d) => `<div><strong>${escapeHtml(d.name)}</strong> ${escapeHtml(d.role || 'Unknown')}</div>`).join('')
     : '<p class="muted">No announced deaths.</p>';
@@ -432,12 +517,51 @@ function gmConsoleMarkup(gm) {
     return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${escapeHtml(message)}</div>`;
   }).join('');
   return `
-    <div class="gm-stat-grid">
-      ${statCard('Round', gm.round ?? 0)}
-      ${statCard('Alive', `${gm.aliveCount || 0}/${gm.playerCount || 0}`, 'ok')}
-      ${statCard('Mafia pending', gm.pendingMafiaVotes ?? 0)}
-      ${statCard('Day votes pending', gm.pendingDayVotes ?? 0)}
+    <div class="gm-command-shell">
+      <aside class="gm-command-rail">
+        <div class="gm-master-badge">${roleIcon('Sheriff')}<strong>Game Master</strong></div>
+        <div class="gm-phase-box">
+          <span>Phase</span>
+          <strong>${escapeHtml(phaseTitle(gm.phase, gm.round))}</strong>
+          <em>${fmtSec(gm.phaseRemainingSec || 0)} remaining</em>
+        </div>
+        <div class="gm-control-stack">
+          <button class="secondary-button" data-gm-button="next" ${gm.phase === 'game_over' ? 'disabled' : ''}>Advance phase</button>
+          <button class="secondary-button" data-gm-button="night" ${gm.phase === 'game_over' ? 'disabled' : ''}>Start night</button>
+          <button class="danger-button" data-gm-button="void" ${gm.phase === 'lobby' ? 'disabled' : ''}>Void game</button>
+        </div>
+        <section class="gm-rail-section">
+          <h4>Role distribution</h4>
+          ${gmRoleDistribution(players)}
+        </section>
+      </aside>
+      <main class="gm-table-stage">
+        <header class="gm-stage-header">
+          <h4>Players</h4>
+          <span>${players.length} total / ${alive} alive / ${dead} dead</span>
+        </header>
+        <div class="gm-player-grid">
+          ${players.length ? players.map(gmPlayerCard).join('') : '<p class="muted">No table players seated.</p>'}
+        </div>
+      </main>
+      <aside class="gm-event-log">
+        <h4>Event log <span>GM only</span></h4>
+        <div class="gm-log-lines">${gmEventLines(gm, players)}</div>
+        <div class="gm-night-summary">
+          <h5>Night actions summary</h5>
+          ${pendingActionMarkup(gm)}
+          <div class="feed-lines">${deaths}</div>
+          <div class="feed-lines">${finals || '<p class="muted">No final statements submitted.</p>'}</div>
+        </div>
+      </aside>
     </div>
+    <div class="gm-detail-drawer">
+      <div class="gm-stat-grid">
+        ${statCard('Round', gm.round ?? 0)}
+        ${statCard('Alive', `${alive}/${players.length}`, 'ok')}
+        ${statCard('Mafia pending', gm.pendingMafiaVotes ?? 0)}
+        ${statCard('Day votes pending', gm.pendingDayVotes ?? 0)}
+      </div>
     <div class="gm-feed-grid">
       <section class="feed-card">
         <h4>Night / vote outcomes</h4>
@@ -450,6 +574,7 @@ function gmConsoleMarkup(gm) {
       ${tallyMarkup('Day vote tally', gm.dayVoteTally, players)}
       ${chatPreview('Mafia channel', gm.mafiaChat)}
       ${chatPreview('Public channel', gm.playerChat)}
+    </div>
     </div>
   `;
 }
@@ -500,14 +625,28 @@ function updateValidation(playerCount) {
   el.classList.toggle('ok', ok);
 }
 
-function renderRoster(players) {
+function renderRoster(players, canManageSeats = false) {
   $('player-roster').innerHTML = players.length ? players.map((p) => `
-    <article class="player-row ${p.alive ? '' : 'dead'}">
+    <article class="player-row ${p.alive ? '' : 'dead'} ${p.accountId === state.account?.id ? 'manager-seat' : ''}">
       ${avatar(p)}
       <div><strong>${escapeHtml(p.name)}</strong><span>${p.role || 'Waiting'}</span></div>
       <em>${p.alive ? 'Alive' : 'Dead'}</em>
+      ${canManageSeats ? `<button class="ghost-button seat-remove" data-remove-seat="${escapeHtml(p.id)}" aria-label="Remove ${escapeHtml(p.name)} from lobby">Remove</button>` : ''}
     </article>
   `).join('') : '<div class="empty-state">No players seated yet.</div>';
+  $('player-roster').querySelectorAll('[data-remove-seat]').forEach((btn) => {
+    btn.addEventListener('click', () => removeSeat(btn.dataset.removeSeat).catch((err) => setMessage(err.message, true)));
+  });
+}
+
+async function removeSeat(playerId) {
+  await api(`/api/gm/players/${encodeURIComponent(playerId)}`, { method: 'DELETE' });
+  if (state.playerId === playerId) {
+    state.playerId = null;
+    localStorage.removeItem('playerId');
+  }
+  await refreshAll();
+  setMessage('Seat removed from lobby.');
 }
 
 async function refreshPlayer() {
@@ -593,14 +732,14 @@ function playerGuidanceMarkup(ps) {
     return '<strong>Night action</strong><span>Wait silently while Mafia acts.</span>';
   }
   if (ps.phase === 'night_sheriff') {
-    if (ps.role === 'Sheriff') return ps.sheriffResult
-      ? '<strong>Investigation complete</strong><span>Your result is shown below. Keep it private until discussion.</span>'
+    if (ps.role === 'Sheriff') return ps.sheriffResult || ps.actionNoticeTitle
+      ? `<strong>${escapeHtml(ps.actionNoticeTitle || 'Investigation complete')}</strong><span>${escapeHtml(ps.actionNoticeBody || 'Your result is shown below. Keep it private until discussion.')}</span>`
       : '<strong>Investigate</strong><span>Choose one alive player to inspect.</span>';
     return '<strong>Night action</strong><span>Wait silently while the Sheriff acts.</span>';
   }
   if (ps.phase === 'night_doctor') {
-    if (ps.role === 'Doctor') return ps.doctorProtectCurrent
-      ? '<strong>Protection submitted</strong><span>Your protected target is selected below.</span>'
+    if (ps.role === 'Doctor') return ps.doctorProtectCurrent || ps.actionNoticeTitle
+      ? `<strong>${escapeHtml(ps.actionNoticeTitle || 'Protection submitted')}</strong><span>${escapeHtml(ps.actionNoticeBody || 'Your protected target is selected below.')}</span>`
       : '<strong>Protect</strong><span>Choose one alive player. You cannot repeat last night.</span>';
     return '<strong>Night action</strong><span>Wait silently while the Doctor acts.</span>';
   }
@@ -648,6 +787,7 @@ function renderRole(ps) {
   $('role-card').setAttribute('aria-label', cardRevealed ? 'Hide role card' : 'Reveal role card');
   const playGrid = document.querySelector('#tab-play .play-grid');
   if (playGrid) {
+    playGrid.classList.toggle('deal-scene', ps.phase === 'night0');
     playGrid.classList.remove('role-peeking', 'role-mafia', 'role-sheriff', 'role-doctor', 'role-vigilante', 'role-town');
     if (cardRevealed) playGrid.classList.add('role-peeking', `role-${roleClass}`);
   }
@@ -712,6 +852,18 @@ function renderDealStage(ps) {
   stage.querySelector('.deal-header strong').textContent = revealed ? `You are the ${ps.role || 'Unknown'}` : 'Cards are being dealt';
   stage.querySelector('.deal-header span').textContent = revealed ? 'This copied card becomes your private role card below.' : `${players.length} role card(s) for ${players.length} seated player(s).`;
   stage.querySelectorAll('.deal-card').forEach((card, index) => {
+    const isSelf = index === selfIndex;
+    if (isSelf) {
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-label', revealed ? 'Hide your dealt role card' : 'Reveal your dealt role card');
+      card.setAttribute('aria-pressed', revealed ? 'true' : 'false');
+      if (!card.dataset.boundReveal) {
+        card.dataset.boundReveal = 'true';
+        card.addEventListener('click', toggleRolePeek);
+        card.addEventListener('keydown', roleCardKeydown);
+      }
+    }
     card.classList.toggle('revealed', index === selfIndex && revealed);
   });
 }
@@ -797,12 +949,13 @@ function actionPicker(action, ps, options) {
     : '';
   const doctorRepeat = action === 'submit-doctor' && selected && selected === ps.lastDoctorTarget;
   const needsTarget = !options.includeAbstain && !selected;
+  const locked = (action === 'submit-sheriff' && !!ps.sheriffTargetCurrent) || (action === 'submit-doctor' && !!ps.doctorProtectCurrent);
   return `
-    <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}">
+    <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}" data-locked="${locked ? 'true' : 'false'}">
       <input id="act-target" type="hidden" value="${escapeHtml(selected)}">
       <div class="target-grid">${abstainTile}${tiles || '<p class="muted">No alive targets available.</p>'}</div>
       <p id="selected-target-summary" class="selected-target-summary ${selectedName ? '' : 'hidden'}">Selected: <strong>${escapeHtml(selectedName)}</strong></p>
-      <button class="primary-button" data-action="${action}" ${doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(options.label)}</button>
+      <button class="primary-button" data-action="${action}" ${locked || doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(locked ? 'Submitted' : options.label)}</button>
       <p id="action-warning" class="action-warning ${doctorRepeat ? '' : 'hidden'}">Doctors cannot protect the same player on consecutive nights. Choose another alive player.</p>
       <p class="muted">${escapeHtml(options.hint)}</p>
       ${options.extra || ''}
@@ -839,7 +992,8 @@ function refreshActionChoice(panel) {
   const selectedTile = panel.querySelector('.target-tile.selected');
   const doctorRepeat = panel.dataset.targetAction === 'submit-doctor' && selected && selected === panel.dataset.lastDoctorTarget;
   const needsTarget = panel.dataset.requiresTarget === 'true' && !selected;
-  if (button) button.disabled = doctorRepeat || needsTarget;
+  const locked = panel.dataset.locked === 'true';
+  if (button) button.disabled = locked || doctorRepeat || needsTarget;
   if (warning) warning.classList.toggle('hidden', !doctorRepeat);
   if (summary) {
     const label = selectedTile?.querySelector('span:last-child')?.textContent || '';
@@ -852,6 +1006,14 @@ function refreshActionChoice(panel) {
 function bindActionTargets(panel) {
   const targetInput = panel.querySelector('#act-target');
   if (!targetInput) return;
+  if (panel.dataset.locked === 'true') {
+    panel.querySelectorAll('[data-target-id]').forEach((tile) => {
+      tile.disabled = true;
+      tile.setAttribute('aria-disabled', 'true');
+    });
+    refreshActionChoice(panel);
+    return;
+  }
   panel.querySelectorAll('[data-target-id]').forEach((tile) => tile.addEventListener('click', () => {
     targetInput.value = tile.dataset.targetId || '';
     state.pendingTargetByPhase[panel.dataset.storeKey] = targetInput.value;
@@ -887,9 +1049,17 @@ function renderPlayerList(players) {
 
 function renderChats(ps) {
   const mafiaPanel = $('mafia-chat-panel');
+  const publicVisible = !!ps.publicChatVisible;
+  const publicCanSend = !!ps.publicChatCanSend;
   mafiaPanel.classList.toggle('hidden', !(ps.role === 'Mafia' && ps.phase === 'night_mafia' && ps.alive));
   $('mafia-chat-log').innerHTML = chatLines(ps.mafiaChat || []);
-  $('player-chat-log').innerHTML = chatLines(ps.playerChat || []);
+  $('player-chat-log').innerHTML = publicVisible ? chatLines(ps.playerChat || []) : '<p class="muted">Public chat is hidden during private night actions.</p>';
+  $('player-chat-input').disabled = !publicCanSend;
+  $('player-chat-form').querySelector('button').disabled = !publicCanSend;
+  $('player-chat-form').classList.toggle('disabled', !publicCanSend);
+  $('player-chat-status').textContent = publicCanSend
+    ? 'Public chat is open for alive players.'
+    : (publicVisible ? 'Public chat is read-only right now.' : 'Public chat opens during morning, discussion, and voting.');
 }
 
 function chatLines(items) {
@@ -920,7 +1090,7 @@ async function submitAction(action) {
   const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
   if (result.locked) {
     if (storeKey) delete state.pendingTargetByPhase[storeKey];
-    setMessage(`Action committed. Advanced to ${phaseTitle(result.phase, '')}.`);
+    setMessage(result.hold ? 'Action committed. Showing the result before the phase advances.' : `Action committed. Advanced to ${phaseTitle(result.phase, '')}.`);
     state.lastActionRenderKey = '';
     await refreshAll();
     return;
@@ -936,6 +1106,10 @@ async function submitAction(action) {
 
 async function sendChat(kind) {
   const input = kind === 'mafia' ? $('mafia-chat-input') : $('player-chat-input');
+  if (kind === 'player' && state.lastPlayerState && !state.lastPlayerState.publicChatCanSend) {
+    setMessage('Public chat is closed right now.', true);
+    return;
+  }
   const message = input.value.trim();
   if (!message) return;
   await api(kind === 'mafia' ? '/api/player/mafia-chat' : '/api/player/chat', {
@@ -1061,6 +1235,7 @@ function bindEvents() {
   $('save-setup-btn').addEventListener('click', () => saveSetup().catch((err) => setMessage(err.message, true)));
   $('launch-game-btn').addEventListener('click', () => launchGame().catch((err) => setMessage(err.message, true)));
   $('save-timers-btn').addEventListener('click', () => saveTimerSettings().catch((err) => setMessage(err.message, true)));
+  $('public-day-tally').addEventListener('change', () => { state.settingsDirty = true; });
   $('start-night-btn').addEventListener('click', () => gmStartNight().catch((err) => setMessage(err.message, true)));
   $('next-phase-btn').addEventListener('click', () => gmNextPhase().catch((err) => setMessage(err.message, true)));
   $('void-game-btn').addEventListener('click', () => gmVoidGame().catch((err) => setMessage(err.message, true)));

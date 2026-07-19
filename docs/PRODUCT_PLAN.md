@@ -58,8 +58,8 @@ Treat the browser experience like five Unity-style scenes:
 | Core phase engine | **Implemented** | 95% | Timed night and day phases run server-side with an independent host ticker; executable edge-case tests remain. |
 | Supported role actions | **Implemented** | 90% | Mafia, Sheriff, Doctor, and Vigilante actions are implemented; end-to-end edge-case verification remains. |
 | Day voting and victory | **Implemented** | 85% | Voting, public-tally setting, elimination, and win detection exist; vote-rule acceptance tests are still needed. |
-| Chat and information controls | **Partially implemented** | 65% | Mafia chat is phase-gated; public player chat currently needs phase/dead-player restriction hardening. |
-| Player/GM experience | **Partially implemented** | 93% | Functional responsive UI, portrait action tray, one-time Night 0 card deal, reusable peek/hide role card, clickable target cards with selection summaries, doctor warnings, sheriff result visuals, GM/player phase guidance, an active-round GM console, and GM observability exist; accessibility and broader polish remain. |
+| Chat and information controls | **Substantially implemented** | 90% | Mafia chat is phase-gated; public player chat has server send/visibility gates and a disabled/read-only UI; player payloads now role-gate private action context. |
+| Player/GM experience | **Partially implemented** | 97% | Functional responsive UI, portrait action tray, full-screen Night 0 deal scene, reusable peek/hide role card, clickable target cards with selection summaries, doctor warnings, sheriff result visuals, delayed Sheriff/Doctor result holds, GM/player phase guidance, pending-player GM helpers, a command-center GM scene, and GM observability exist; accessibility and broader polish remain. |
 | Test automation / quality gate | **In progress** | 25% | Static checks exist and executable JUnit coverage now covers vote majority, ties, abstentions, plurality helpers, win-condition decisions, and night-role phase ordering; broader role, night-resolution, authorization, and API smoke tests remain. |
 | Release operations and documentation | **In progress** | 65% | Java launch instructions, GM runbook, CI workflow, and release checklist exist; packaging and clean-environment verification remain. |
 | Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
@@ -108,8 +108,8 @@ Treat the browser experience like five Unity-style scenes:
 
 ### M3 — Rules parity, privacy, and resilience: next priority
 
-- [ ] Restrict general player chat to the intended phases and block dead players, matching the documented permission matrix.
-- [ ] Confirm all player-state payloads expose only role-authorized information in every phase.
+- [x] Restrict general player chat to the intended phases and block dead players, matching the documented permission matrix.
+- [x] Confirm all player-state payloads expose only role-authorized information in every phase.
 - [ ] Decide and document the final day-vote rule: strict majority (as specified) versus current plurality behavior; then enforce and test it consistently.
 - [x] Define early-lock behavior for mafia and day votes, or remove it from the specification.
 - [x] Add a clear reconnect/session-recovery policy; preserve a player's identity across accidental refreshes where feasible.
@@ -129,7 +129,12 @@ Treat the browser experience like five Unity-style scenes:
 - [x] Add player-facing guidance for joining, role reveal, action confirmation, waiting states, death, final statements, and game over.
 - [x] Add GM-facing phase guidance for setup, night roles, morning, final statements, discussion, voting, and game over.
 - [x] Replace the raw GM live-state JSON view with status cards, separated chat previews, action summaries, and active-round controls.
-- [x] Add a one-time animated Night 0 role-card deal with one card per seated player, role symbols, a copied private role card, and separate landscape/portrait layouts.
+- [x] Add GM current-action pending player chips for night roles, final statements, and day voting.
+- [x] Add a full-screen Night 0 deal scene with one card per seated player, role symbols, a clickable player card reveal, a copied private role card, and separate landscape/portrait layouts.
+- [x] Hold Sheriff and Doctor phases briefly after submit so the player and GM can see the committed result before auto-advance.
+- [x] Preserve GM timer edits while the polling loop runs, then apply saved timers to subsequent phases.
+- [x] Restyle active GM view as a command-center scene with a table-stage player grid, left GM controls, right event log, and GM-excluded display counts.
+- [x] Add manager-only lobby seat removal so the GM can keep themselves or mistaken players out of the seated player list before launch.
 - [ ] Improve small-screen usability, keyboard support, semantic labels, color contrast, and non-color status cues.
 - [x] Surface clear GM-facing phase guidance, action completion counts, outcomes, and winner summary.
 - [ ] Conduct structured multi-device playtests (minimum 3 players and a representative 6–10 player game) and record defects.
@@ -164,7 +169,7 @@ This order minimizes rework: lock the rules before polishing the interface, then
 These are the next high-value UI features after the PR22 pass:
 
 - **Action lock clarity:** every night role and day vote should show a clear committed state, the selected target, and the next phase once the server accepts the action.
-- **GM nudge controls:** the GM console should identify exactly who is pending for the current phase and provide a table-safe reminder action for in-person use.
+- **GM nudge controls:** the GM console now identifies exactly who is pending for the current phase; next pass can add table-safe reminder copy or controls.
 - **Mobile action tray:** portrait mode now surfaces phase, timer, alive count, and selected target above the play layout; next pass can add one-tap scroll/focus shortcuts.
 - **Reconnect banner:** returning players should see whether they recovered their seat, joined as a new seat, or need GM help.
 - **Post-game recap:** game over should show winner, eliminations, final vote/action summary, and score changes per player.
