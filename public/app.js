@@ -246,7 +246,7 @@ function roleTotal() {
 function renderRoleControls() {
   $('role-controls').innerHTML = Object.keys(roleLabels).map((key) => `
     <div class="stepper">
-      <span>${roleLabels[key]}</span>
+      <span><span class="role-mini-icon ${key}">${roleIcon(roleLabels[key])}</span>${roleLabels[key]}</span>
       <div>
         <button data-role-dec="${key}" aria-label="Decrease ${roleLabels[key]}">-</button>
         <strong id="${key}-count">${state.roles[key]}</strong>
@@ -255,7 +255,7 @@ function renderRoleControls() {
     </div>
   `).join('') + `
     <div class="stepper">
-      <span>Vigilante shots</span>
+      <span><span class="role-mini-icon vigilante">${roleIcon('Vigilante')}</span>Vigilante shots</span>
       <div>
         <button data-shot-dec aria-label="Decrease vigilante shots">-</button>
         <strong id="vigi-shots-count">${state.vigilanteShots}</strong>
@@ -340,6 +340,12 @@ async function resetLobby() {
 
 async function refreshGm() {
   const gm = await api('/api/gm-state');
+  const hostTab = document.querySelector('[data-tab="host"]');
+  if (hostTab) hostTab.classList.toggle('hidden', !gm.canManage);
+  if (!gm.canManage && document.querySelector('#tab-host.active')) showTab('play');
+  const setupVisible = gm.phase === 'lobby' || gm.phase === 'game_over';
+  $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
+  $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
   $('timer-pill').textContent = fmtSec(gm.phaseRemainingSec || 0);
   $('phase-heading').textContent = phaseTitle(gm.phase, gm.round);
@@ -364,18 +370,86 @@ async function refreshGm() {
   }
   updateValidation(gm.playerCount);
   renderRoster(gm.players || []);
-  $('gm-action-status').textContent = JSON.stringify({
-    round: gm.round,
-    phase: gm.phase,
-    remaining: gm.phaseRemainingSec,
-    winner: gm.winner,
-    morningDeaths: gm.morningDeaths,
-    finalStatementPending: gm.finalStatementPending,
-    finalStatements: gm.finalStatements,
-    mafiaVotesPending: gm.pendingMafiaVotes,
-    dayVotesPending: gm.pendingDayVotes,
-    dayVoteTally: gm.dayVoteTally,
-  }, null, 2);
+  $('gm-phase-guide').innerHTML = gmGuidanceMarkup(gm);
+  $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
+}
+
+function statCard(label, value, tone = '') {
+  return `<div class="stat-card ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function chatPreview(title, messages) {
+  const lines = (messages || []).slice(-5).map((m) => `<div><strong>${escapeHtml(m.author)}</strong> ${escapeHtml(m.message)}</div>`).join('');
+  return `
+    <section class="feed-card">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="feed-lines">${lines || '<p class="muted">No messages yet.</p>'}</div>
+    </section>
+  `;
+}
+
+function tallyMarkup(title, tally, players) {
+  const entries = Object.entries(tally || {});
+  return `
+    <section class="feed-card">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="feed-lines">${entries.length ? entries.map(([id, count]) => {
+        const player = players.find((p) => p.id === id);
+        return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${count} vote(s)</div>`;
+      }).join('') : '<p class="muted">No votes locked in yet.</p>'}</div>
+    </section>
+  `;
+}
+
+function gmConsoleMarkup(gm) {
+  const players = gm.players || [];
+  const deaths = gm.morningDeaths?.length
+    ? gm.morningDeaths.map((d) => `<div><strong>${escapeHtml(d.name)}</strong> ${escapeHtml(d.role || 'Unknown')}</div>`).join('')
+    : '<p class="muted">No announced deaths.</p>';
+  const finals = Object.entries(gm.finalStatements || {}).map(([id, message]) => {
+    const player = players.find((p) => p.id === id);
+    return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${escapeHtml(message)}</div>`;
+  }).join('');
+  return `
+    <div class="gm-stat-grid">
+      ${statCard('Round', gm.round ?? 0)}
+      ${statCard('Alive', `${gm.aliveCount || 0}/${gm.playerCount || 0}`, 'ok')}
+      ${statCard('Mafia pending', gm.pendingMafiaVotes ?? 0)}
+      ${statCard('Day votes pending', gm.pendingDayVotes ?? 0)}
+    </div>
+    <div class="gm-feed-grid">
+      <section class="feed-card">
+        <h4>Night / vote outcomes</h4>
+        <div class="feed-lines">${deaths}</div>
+      </section>
+      <section class="feed-card">
+        <h4>Final statements</h4>
+        <div class="feed-lines">${finals || '<p class="muted">No final statements submitted.</p>'}</div>
+      </section>
+      ${tallyMarkup('Day vote tally', gm.dayVoteTally, players)}
+      ${chatPreview('Mafia channel', gm.mafiaChat)}
+      ${chatPreview('Public channel', gm.playerChat)}
+    </div>
+  `;
+}
+
+function gmGuidanceMarkup(gm) {
+  const deaths = gm.morningDeaths?.length ? gm.morningDeaths.map((d) => d.name).join(', ') : '';
+  const guides = {
+    lobby: ['Seat the table', 'Create or select the room, confirm players, save role counts, then launch roles.'],
+    night0: ['Private role reveal', 'Give players time to reveal and confirm roles. Start night when the table is ready.'],
+    night_mafia: ['Mafia action', `${gm.pendingMafiaVotes || 0} Mafia vote(s) still pending. The phase can auto-advance on timer or majority lock.`],
+    night_sheriff: ['Sheriff action', 'The Sheriff chooses one alive player. The result stays private to the Sheriff.'],
+    night_doctor: ['Doctor action', 'The Doctor protects one alive player and cannot repeat last night\'s target.'],
+    night_vigilante: ['Vigilante action', 'The Vigilante may shoot one alive non-self target or skip to save the shot.'],
+    morning: ['Resolve the night', deaths ? `Announce night deaths: ${deaths}.` : 'Announce that no one died overnight.'],
+    final_statements: ['Final statements', `${gm.finalStatementPending || 0} final statement(s) still pending.`],
+    discussion: ['Table discussion', 'Let alive players discuss. Move to voting when the room is ready or when the timer expires.'],
+    day_vote: ['Day voting', `${gm.pendingDayVotes || 0} alive player vote(s) still pending. Strict majority is required for elimination.`],
+    game_over: ['Game over', `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
+  };
+  const [title, body] = guides[gm.phase] || ['Current phase', gm.phase || 'Waiting for game state.'];
+  return `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
 }
 
 function phaseTitle(phase, round) {
@@ -418,6 +492,7 @@ async function refreshPlayer() {
   if (!state.playerId) {
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
+    $('player-phase-guide').innerHTML = '<strong>Take a seat</strong><span>Join the current room to enter the table.</span>';
     $('player-action-panel').innerHTML = '<p class="muted">Join a room to receive actions.</p>';
     return;
   }
@@ -426,6 +501,7 @@ async function refreshPlayer() {
     $('join-state').classList.add('hidden');
     $('role-state').classList.remove('hidden');
     renderRole(ps);
+    $('player-phase-guide').innerHTML = playerGuidanceMarkup(ps);
     renderPlayerAction(ps);
     renderPlayerList(ps.players || []);
     renderChats(ps);
@@ -439,10 +515,55 @@ async function refreshPlayer() {
     }
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
+    $('player-phase-guide').innerHTML = '<strong>Seat lost</strong><span>Join the current room again to reconnect.</span>';
   }
 }
 
+function playerGuidanceMarkup(ps) {
+  if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(ps.winner || 'unknown')}. Your score has been recorded.</span>`;
+  if (!ps.alive && ps.phase !== 'final_statements') return '<strong>Observe only</strong><span>You are out of the round. Watch the table and keep private information private.</span>';
+  if (ps.phase === 'night0') return '<strong>Role reveal</strong><span>Reveal privately, confirm when ready, then wait for the GM.</span>';
+  if (ps.phase === 'night_mafia') {
+    if (ps.role === 'Mafia') return ps.mafiaVoteSubmitted
+      ? `<strong>Vote submitted</strong><span>${ps.pendingMafiaVotes || 0} Mafia vote(s) still pending.</span>`
+      : '<strong>Mafia vote</strong><span>Choose an alive target with your team, then submit.</span>';
+    return '<strong>Night action</strong><span>Wait silently while Mafia acts.</span>';
+  }
+  if (ps.phase === 'night_sheriff') {
+    if (ps.role === 'Sheriff') return ps.sheriffResult
+      ? '<strong>Investigation complete</strong><span>Your result is shown below. Keep it private until discussion.</span>'
+      : '<strong>Investigate</strong><span>Choose one alive player to inspect.</span>';
+    return '<strong>Night action</strong><span>Wait silently while the Sheriff acts.</span>';
+  }
+  if (ps.phase === 'night_doctor') {
+    if (ps.role === 'Doctor') return ps.doctorProtectCurrent
+      ? '<strong>Protection submitted</strong><span>Your protected target is selected below.</span>'
+      : '<strong>Protect</strong><span>Choose one alive player. You cannot repeat last night.</span>';
+    return '<strong>Night action</strong><span>Wait silently while the Doctor acts.</span>';
+  }
+  if (ps.phase === 'night_vigilante') {
+    if (ps.role === 'Vigilante') return ps.vigilanteTargetCurrent
+      ? '<strong>Shot submitted</strong><span>Your target is selected below.</span>'
+      : '<strong>Vigilante choice</strong><span>Choose a target or skip to save your shot.</span>';
+    return '<strong>Night action</strong><span>Wait silently while the Vigilante acts.</span>';
+  }
+  if (ps.phase === 'morning') return '<strong>Morning report</strong><span>Review what happened overnight, then prepare for discussion.</span>';
+  if (ps.phase === 'final_statements') {
+    if (ps.finalStatementEligible && !ps.finalStatementSubmitted) return '<strong>Final words</strong><span>You may send one final public statement.</span>';
+    if (ps.finalStatementEligible) return '<strong>Final words sent</strong><span>Wait for the table to continue.</span>';
+    return '<strong>Final statements</strong><span>Listen while eliminated players speak.</span>';
+  }
+  if (ps.phase === 'discussion') return '<strong>Discussion open</strong><span>Talk at the table or use public chat. Watch the timer.</span>';
+  if (ps.phase === 'day_vote') return ps.dayVoteSubmitted
+    ? `<strong>Vote submitted</strong><span>${ps.pendingDayVotes || 0} alive player vote(s) still pending.</span>`
+    : '<strong>Day vote</strong><span>Choose an alive player or abstain. Strict majority is required.</span>';
+  return '<strong>Waiting</strong><span>No action is needed right now.</span>';
+}
+
 function renderRole(ps) {
+  state.currentPlayerPhase = ps.phase;
+  renderDealStage(ps);
+  $('role-symbol').innerHTML = roleIcon(ps.role || 'Hidden');
   $('role-name').textContent = (ps.role || 'Waiting').toUpperCase();
   const team = ps.role === 'Mafia' && ps.mafiaTeam?.length
     ? ` Team: ${ps.mafiaTeam.map((mate) => mate.name).join(', ')}.`
@@ -450,22 +571,156 @@ function renderRole(ps) {
   $('role-desc').textContent = `${ps.roleDescription || 'Role appears after the host launches the game.'}${team}`;
   $('vigi-ammo').textContent = ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
   if (state.roleReveal.lastPhase !== ps.phase) {
-    state.roleReveal = { revealed: ps.phase !== 'night0', acknowledged: false, lastPhase: ps.phase };
+    state.roleReveal = { revealed: ps.phase !== 'night0' ? false : state.roleReveal.revealed, acknowledged: false, lastPhase: ps.phase };
   }
-  $('role-card').classList.toggle('masked', ps.phase === 'night0' && !state.roleReveal.revealed && !state.roleReveal.acknowledged);
-  $('role-card').className = `role-card ${String(ps.role || '').toLowerCase()} ${$('role-card').classList.contains('masked') ? 'masked' : ''}`;
+  const cardRevealed = ps.phase === 'night0' && (state.roleReveal.revealed || state.roleReveal.acknowledged);
+  const cardMasked = ps.phase === 'night0' && !cardRevealed;
+  $('role-card').className = `role-card ${cardRevealed ? 'revealed ' + String(ps.role || '').toLowerCase() : 'neutral'} ${cardMasked ? 'masked' : ''}`;
   $('night0-controls').classList.toggle('hidden', ps.phase !== 'night0');
-  if ($('role-card').classList.contains('masked')) {
+  if (cardMasked) {
+    $('role-symbol').innerHTML = roleIcon('Hidden');
     $('role-name').textContent = 'HIDDEN';
     $('role-desc').textContent = 'Tap reveal when nobody else can see your screen.';
   }
 }
 
-function targetOptions(ps, includeAbstain = false, allowSelf = false) {
-  const alive = (ps.players || []).filter((p) => p.alive && (allowSelf || p.id !== ps.id));
-  let options = includeAbstain ? '<option value="">Abstain / skip</option>' : '<option value="">Choose target</option>';
-  for (const p of alive) options += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
-  return options;
+function toggleRolePeek() {
+  if (state.currentPlayerPhase !== 'night0') return;
+  state.roleReveal.revealed = !state.roleReveal.revealed;
+  state.roleReveal.acknowledged = false;
+  state.lastActionRenderKey = '';
+  refreshPlayer().catch((err) => setMessage(err.message, true));
+}
+
+function roleCardKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  toggleRolePeek();
+}
+
+function renderDealStage(ps) {
+  const stage = $('deal-stage');
+  if (!stage) return;
+  const showDeal = ps.phase === 'night0';
+  stage.classList.toggle('hidden', !showDeal);
+  if (!showDeal) {
+    stage.innerHTML = '';
+    return;
+  }
+  const players = ps.players || [];
+  const selfIndex = Math.max(0, players.findIndex((p) => p.id === ps.id));
+  const revealed = state.roleReveal.revealed || state.roleReveal.acknowledged;
+  stage.innerHTML = `
+    <div class="deal-header">
+      <strong>${revealed ? `You are the ${escapeHtml(ps.role || 'Unknown')}` : 'Cards are being dealt'}</strong>
+      <span>${revealed ? 'Keep your identity hidden until the table earns it.' : `${players.length} role card(s) for ${players.length} seated player(s).`}</span>
+    </div>
+    <div class="deal-table" style="--card-count:${Math.max(players.length, 1)}">
+      ${players.map((player, index) => {
+        const isSelf = index === selfIndex;
+        const faceUp = isSelf && revealed;
+        return `
+          <article class="deal-card ${isSelf ? 'mine' : ''} ${faceUp ? 'revealed' : ''}" style="--deal-index:${index}; --deal-mid:${selfIndex}">
+            <div class="deal-card-inner">
+              <div class="deal-card-back"><span></span></div>
+              <div class="deal-card-front ${String(ps.role || '').toLowerCase()}">
+                ${roleIcon(ps.role)}
+                <strong>${escapeHtml(ps.role || 'Role')}</strong>
+                <small>${isSelf ? 'Your card' : 'Hidden'}</small>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function aliveTargets(ps, allowSelf = false) {
+  return (ps.players || []).filter((p) => p.alive && (allowSelf || p.id !== ps.id));
+}
+
+function submittedTarget(ps, action) {
+  if (action === 'submit-mafia') return ps.mafiaVoteCurrent || '';
+  if (action === 'submit-sheriff') return ps.sheriffTargetCurrent || '';
+  if (action === 'submit-doctor') return ps.doctorProtectCurrent || '';
+  if (action === 'submit-vigilante') return ps.vigilanteTargetCurrent || '';
+  if (action === 'submit-day') return ps.dayVoteCurrent || '';
+  return '';
+}
+
+function actionStoreKey(ps, action) {
+  return `${ps.round}|${ps.phase}|${ps.role}|${action}`;
+}
+
+function roleIcon(kind) {
+  if (kind === 'Mafia') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M9 23h22l4 6H5l4-6Z"/><path d="M14 11h12l3 12H11l3-12Z"/><path d="M11 22h18"/></svg>';
+  }
+  if (kind === 'Sheriff') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m20 6 4 6 7 1-2 7 3 6-7 2-5 5-5-5-7-2 3-6-2-7 7-1 4-6Z"/><path d="M16 20h8"/><path d="M20 16v8"/></svg>';
+  }
+  if (kind === 'Doctor') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m27 7 6 6-17 17-8 2 2-8 17-17Z"/><path d="m23 11 6 6"/><path d="M10 24l6 6"/></svg>';
+  }
+  if (kind === 'Vigilante') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 18h17l5 4v4H17l-2 6h-5l2-6H8v-8Z"/><path d="M25 18v-4h6"/><path d="M13 26h6"/></svg>';
+  }
+  if (kind === 'Town') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20 20 10l12 10"/><path d="M12 19v13h16V19"/><path d="M17 32v-8h6v8"/></svg>';
+  }
+  if (kind === 'Hidden') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 8 32 20 20 32 8 20 20 8Z"/></svg>';
+  }
+  return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m11 21 6 6 13-15"/></svg>';
+}
+
+function sheriffResultMarkup(ps) {
+  if (!ps.sheriffResult) return '';
+  const target = ps.sheriffResultTargetName ? `${escapeHtml(ps.sheriffResultTargetName)} is` : 'Result';
+  return `
+    <div class="result-card ${ps.sheriffResult === 'Mafia' ? 'mafia' : 'town'}">
+      <span class="result-icon">${roleIcon(ps.sheriffResult)}</span>
+      <div><strong>${target} ${escapeHtml(ps.sheriffResult)}</strong><span>${ps.sheriffResult === 'Mafia' ? 'Mafia alignment confirmed.' : 'Town alignment confirmed.'}</span></div>
+    </div>
+  `;
+}
+
+function targetTile(player, selected) {
+  return `
+    <button class="target-tile ${selected ? 'selected' : ''}" type="button" data-target-id="${escapeHtml(player.id)}" aria-pressed="${selected ? 'true' : 'false'}">
+      <span class="target-frame">
+        ${avatar(player, 'avatar target-avatar')}
+        <span class="target-check">${roleIcon('check')}</span>
+      </span>
+      <span>${escapeHtml(player.name)}</span>
+    </button>
+  `;
+}
+
+function actionPicker(action, ps, options) {
+  const storeKey = actionStoreKey(ps, action);
+  const existing = Object.prototype.hasOwnProperty.call(state.pendingTargetByPhase, storeKey)
+    ? state.pendingTargetByPhase[storeKey]
+    : submittedTarget(ps, action);
+  const selected = existing ?? '';
+  const targets = aliveTargets(ps, !!options.allowSelf);
+  const tiles = targets.map((player) => targetTile(player, selected === player.id)).join('');
+  const abstainTile = options.includeAbstain
+    ? `<button class="target-tile skip ${selected === '' ? 'selected' : ''}" type="button" data-target-id="" aria-pressed="${selected === '' ? 'true' : 'false'}"><span class="target-frame"><span class="skip-mark">--</span><span class="target-check">${roleIcon('check')}</span></span><span>${escapeHtml(options.skipLabel || 'Skip')}</span></button>`
+    : '';
+  const doctorRepeat = action === 'submit-doctor' && selected && selected === ps.lastDoctorTarget;
+  const needsTarget = !options.includeAbstain && !selected;
+  return `
+    <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}">
+      <input id="act-target" type="hidden" value="${escapeHtml(selected)}">
+      <div class="target-grid">${abstainTile}${tiles || '<p class="muted">No alive targets available.</p>'}</div>
+      <button class="primary-button" data-action="${action}" ${doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(options.label)}</button>
+      <p id="action-warning" class="action-warning ${doctorRepeat ? '' : 'hidden'}">Doctors cannot protect the same player on consecutive nights. Choose another alive player.</p>
+      <p class="muted">${escapeHtml(options.hint)}</p>
+      ${options.extra || ''}
+    </div>
+  `;
 }
 
 function actionMarkup(ps) {
@@ -477,27 +732,51 @@ function actionMarkup(ps) {
     return '<p class="muted">Final statements are in progress. Listen carefully.</p>';
   }
   if (!ps.alive) return '<p class="danger-text">You are dead. Observe only.</p>';
-  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionSelect('submit-mafia', targetOptions(ps), 'Submit mafia vote', `${ps.pendingMafiaVotes || 0} mafia pending.`);
-  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionSelect('submit-sheriff', targetOptions(ps), 'Investigate', ps.sheriffResult ? `Result: ${escapeHtml(ps.sheriffResult)}` : 'No result yet.');
-  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionSelect('submit-doctor', targetOptions(ps, false, true), 'Protect', 'You may protect yourself, but not repeat last target.');
-  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return actionSelect('submit-vigilante', targetOptions(ps, true), 'Shoot / skip', 'Leave blank to skip.');
-  if (ps.phase === 'day_vote') return actionSelect('submit-day', targetOptions(ps, true), 'Submit vote', `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`);
+  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionPicker('submit-mafia', ps, { label: 'Submit mafia vote', hint: `${ps.pendingMafiaVotes || 0} mafia pending.` });
+  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionPicker('submit-sheriff', ps, { label: 'Investigate', hint: 'Choose one alive player to inspect.', extra: sheriffResultMarkup(ps) });
+  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionPicker('submit-doctor', ps, { label: 'Protect', hint: 'You may protect yourself, but cannot repeat last night.', allowSelf: true });
+  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return actionPicker('submit-vigilante', ps, { label: 'Shoot / skip', hint: 'Choose an alive player or skip to save the shot.', includeAbstain: true, skipLabel: 'Skip shot' });
+  if (ps.phase === 'day_vote') return actionPicker('submit-day', ps, { label: 'Submit vote', hint: `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`, includeAbstain: true, skipLabel: 'Abstain' });
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
   if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;
   return '<p class="muted">No action right now.</p>';
 }
 
-function actionSelect(action, options, label, hint) {
-  return `<div class="form-stack"><select id="act-target">${options}</select><button class="primary-button" data-action="${action}">${label}</button><p class="muted">${hint}</p></div>`;
+function refreshActionChoice(panel) {
+  const selected = panel.querySelector('#act-target')?.value || '';
+  const button = panel.querySelector('[data-action]');
+  const warning = panel.querySelector('#action-warning');
+  const doctorRepeat = panel.dataset.targetAction === 'submit-doctor' && selected && selected === panel.dataset.lastDoctorTarget;
+  const needsTarget = panel.dataset.requiresTarget === 'true' && !selected;
+  if (button) button.disabled = doctorRepeat || needsTarget;
+  if (warning) warning.classList.toggle('hidden', !doctorRepeat);
+  if (doctorRepeat) setMessage('Doctor rule: you cannot protect the same target on consecutive nights.', true);
+}
+
+function bindActionTargets(panel) {
+  const targetInput = panel.querySelector('#act-target');
+  if (!targetInput) return;
+  panel.querySelectorAll('[data-target-id]').forEach((tile) => tile.addEventListener('click', () => {
+    targetInput.value = tile.dataset.targetId || '';
+    state.pendingTargetByPhase[panel.dataset.storeKey] = targetInput.value;
+    panel.querySelectorAll('[data-target-id]').forEach((candidate) => {
+      const selected = candidate === tile;
+      candidate.classList.toggle('selected', selected);
+      candidate.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    refreshActionChoice(panel);
+  }));
+  refreshActionChoice(panel);
 }
 
 function renderPlayerAction(ps) {
-  const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
+  const actionKey = `${ps.round}|${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.mafiaVoteCurrent}|${ps.sheriffTargetCurrent}|${ps.doctorProtectCurrent}|${ps.vigilanteTargetCurrent}|${ps.dayVoteCurrent}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.sheriffResultTargetName}|${ps.lastDoctorTarget}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
   if (state.lastActionRenderKey === actionKey) return;
   state.lastActionRenderKey = actionKey;
   $('player-action-panel').innerHTML = actionMarkup(ps);
   $('player-action-panel').querySelectorAll('[data-action]').forEach((btn) => btn.addEventListener('click', () => submitAction(btn.dataset.action)));
+  $('player-action-panel').querySelectorAll('.target-action').forEach(bindActionTargets);
 }
 
 function renderPlayerList(players) {
@@ -505,7 +784,7 @@ function renderPlayerList(players) {
     <article class="player-row ${p.alive ? '' : 'dead'}">
       ${avatar(p)}
       <div><strong>${escapeHtml(p.name)}</strong><span>${p.revealedRole || (p.alive ? 'In play' : 'Unknown')}</span></div>
-      <em>${p.alive ? 'Alive' : 'Dead'}</em>
+      <em class="life-badge ${p.alive ? 'alive' : 'dead'}">${p.alive ? 'Alive' : 'Dead'}</em>
     </article>
   `).join('') || '<div class="empty-state">Waiting for players.</div>';
 }
@@ -543,6 +822,11 @@ async function submitAction(action) {
   }
   const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
   if (result.locked) setMessage(`Vote locked. Advanced to ${phaseTitle(result.phase, '')}.`);
+  else if (action === 'submit-sheriff') setMessage('Investigation complete.');
+  else if (action === 'submit-doctor') setMessage('Protection submitted.');
+  else if (action === 'submit-vigilante') setMessage(targetId ? 'Shot submitted.' : 'Shot skipped.');
+  else if (action === 'submit-mafia') setMessage('Mafia vote submitted.');
+  else if (action === 'submit-day') setMessage('Vote submitted.');
   state.lastActionRenderKey = '';
   await refreshPlayer();
 }
@@ -680,6 +964,8 @@ function bindEvents() {
   $('reveal-role-btn').addEventListener('click', () => { state.roleReveal.revealed = true; state.lastActionRenderKey = ''; refreshPlayer(); });
   $('hide-role-btn').addEventListener('click', () => { state.roleReveal.revealed = false; refreshPlayer(); });
   $('ack-role-btn').addEventListener('click', () => { state.roleReveal.acknowledged = true; state.roleReveal.revealed = true; refreshPlayer(); });
+  $('role-card').addEventListener('click', toggleRolePeek);
+  $('role-card').addEventListener('keydown', roleCardKeydown);
   $('mafia-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('mafia').catch((err) => setMessage(err.message, true)); });
   $('player-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('player').catch((err) => setMessage(err.message, true)); });
   $('profile-form').addEventListener('submit', (e) => { e.preventDefault(); saveProfile(e.currentTarget).catch((err) => setMessage(err.message, true)); });

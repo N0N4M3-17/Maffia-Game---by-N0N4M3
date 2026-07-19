@@ -45,11 +45,11 @@ The release gate is all of the following:
 | LAN host and browser delivery | **Implemented** | 100% | Java host binds on the LAN and serves the browser assets. |
 | GM lobby and role configuration | **Implemented** | 100% | Name-only join, role-count editing, role-total validation, launch checks, and reset exist. |
 | Private role assignment / Night 0 | **Implemented** | 100% | The server shuffles roles and each player receives their own role after launch. |
-| Core phase engine | **Implemented** | 90% | Timed night and day phases run server-side; the planned final-statements phase is not present. |
+| Core phase engine | **Implemented** | 95% | Timed night and day phases run server-side with an independent host ticker; executable edge-case tests remain. |
 | Supported role actions | **Implemented** | 90% | Mafia, Sheriff, Doctor, and Vigilante actions are implemented; end-to-end edge-case verification remains. |
 | Day voting and victory | **Implemented** | 85% | Voting, public-tally setting, elimination, and win detection exist; vote-rule acceptance tests are still needed. |
 | Chat and information controls | **Partially implemented** | 65% | Mafia chat is phase-gated; public player chat currently needs phase/dead-player restriction hardening. |
-| Player/GM experience | **Partially implemented** | 70% | Functional responsive UI and GM observability exist; onboarding, accessibility, and polish remain. |
+| Player/GM experience | **Partially implemented** | 89% | Functional responsive UI, animated Night 0 card deal, clickable target cards, doctor warnings, sheriff result visuals, GM/player phase guidance, an active-round GM console, and GM observability exist; accessibility and broader polish remain. |
 | Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
 | Release operations and documentation | **In progress** | 65% | Java launch instructions, GM runbook, CI workflow, and release checklist exist; packaging and clean-environment verification remain. |
 | Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
@@ -79,6 +79,7 @@ The release gate is all of the following:
 ### M2 — Core playable round: substantially complete
 
 - [x] Server-owned timers advance Night 0, Mafia, Sheriff, Doctor, Vigilante, morning, discussion, and day-vote phases.
+- [x] A host-side phase ticker advances timed phases even when no player action is submitted.
 - [x] Mafia can use a private, phase-limited chat and submit one kill vote each.
 - [x] Sheriff can investigate one alive player and receive a private alignment result.
 - [x] Doctor can protect an alive player, including themself, but not the same target on consecutive nights.
@@ -106,9 +107,15 @@ The release gate is all of the following:
 ### M4 — Playtest-ready experience
 
 - [x] Add a concise GM runbook: host setup, LAN sharing, role balancing, phase controls, reset, and troubleshooting.
-- [ ] Add player onboarding for joining, role reveal, action confirmation, waiting states, death, and game over.
+- [x] Replace dropdown action targeting with clickable alive-player target cards and explicit submit buttons.
+- [x] Add doctor repeat-protection warnings before submit.
+- [x] Show sheriff investigation results as a visual alignment card.
+- [x] Add player-facing guidance for joining, role reveal, action confirmation, waiting states, death, final statements, and game over.
+- [x] Add GM-facing phase guidance for setup, night roles, morning, final statements, discussion, voting, and game over.
+- [x] Replace the raw GM live-state JSON view with status cards, separated chat previews, action summaries, and active-round controls.
+- [x] Add an animated Night 0 role-card deal with one card per seated player, role symbols, and separate landscape/portrait layouts.
 - [ ] Improve small-screen usability, keyboard support, semantic labels, color contrast, and non-color status cues.
-- [ ] Surface clear GM-facing phase guidance, action completion counts, outcomes, and winner summary.
+- [x] Surface clear GM-facing phase guidance, action completion counts, outcomes, and winner summary.
 - [ ] Conduct structured multi-device playtests (minimum 3 players and a representative 6–10 player game) and record defects.
 
 **Exit mark:** A new GM can host a game with a new group using only the documentation and UI.

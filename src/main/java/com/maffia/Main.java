@@ -33,8 +33,12 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class Main {
@@ -61,6 +65,7 @@ public class Main {
         server.createContext("/", Main::handleRequest);
         server.setExecutor(null);
         server.start();
+        startPhaseTicker();
 
         System.out.printf("Mafia LAN Java host running on http://0.0.0.0:%d%n", port);
         System.out.printf("Local access: http://localhost:%d%n", port);
@@ -532,9 +537,10 @@ public class Main {
                 if (actor == null) return;
                 String target = b.get("targetId").getAsString();
                 if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
+                String previous = STATE.mafiaVotes.get(actor.id);
                 STATE.mafiaVotes.put(actor.id, target);
                 Player voted = findPlayer(target);
-                if (voted != null) pushMafiaChat("SYSTEM", actor.name + " voted for " + voted.name);
+                if (voted != null && !target.equals(previous)) pushMafiaChat("SYSTEM", actor.name + " voted for " + voted.name);
                 int pending = Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size());
                 if (majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null) {
                     nextPhaseInternal();
@@ -553,6 +559,7 @@ public class Main {
                 Player t = findPlayer(target);
                 if (t == null || !t.alive) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 STATE.sheriffTarget = target;
+                actor.lastSheriffTargetName = t.name;
                 actor.lastSheriffResult = "Mafia".equals(t.role) ? "Mafia" : "Town";
                 STATE.lastSheriffResult = actor.name + " -> " + t.name + " is " + actor.lastSheriffResult;
                 writeJson(ex, 200, Map.of("ok", true));
@@ -595,8 +602,9 @@ public class Main {
                 String target = b.has("targetId") && !b.get("targetId").isJsonNull() ? b.get("targetId").getAsString() : "";
                 if (!target.isBlank() && !isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive or abstain.")); return; }
                 String stored = target.isBlank() ? null : target;
+                String previous = STATE.dayVotes.get(actor.id);
                 STATE.dayVotes.put(actor.id, stored);
-                if (STATE.publicDayVoteTally) {
+                if (STATE.publicDayVoteTally && !Objects.equals(previous, stored)) {
                     String votedName = "abstain";
                     if (stored != null) {
                         Player voted = findPlayer(stored);
@@ -684,6 +692,7 @@ public class Main {
             p.alive = true;
             p.lastDoctorTarget = null;
             p.lastSheriffResult = null;
+            p.lastSheriffTargetName = null;
             p.vigilanteShotsRemaining = "Vigilante".equals(p.role) ? STATE.config.vigilanteShots : 0;
         }
 
@@ -705,7 +714,10 @@ public class Main {
         STATE.finalStatementPlayerIds = new ArrayList<>();
         STATE.finalStatements = new LinkedHashMap<>();
         for (Player p : STATE.players) {
-            if ("Sheriff".equals(p.role)) p.lastSheriffResult = null;
+            if ("Sheriff".equals(p.role)) {
+                p.lastSheriffResult = null;
+                p.lastSheriffTargetName = null;
+            }
         }
         setPhase("night_mafia");
     }
@@ -883,6 +895,19 @@ public class Main {
         return room != null && account.id.equals(room.hostAccountId);
     }
 
+    private static void startPhaseTicker() {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "mafia-phase-ticker");
+            t.setDaemon(true);
+            return t;
+        });
+        scheduler.scheduleAtFixedRate(() -> {
+            synchronized (LOCK) {
+                tickPhaseTransitions();
+            }
+        }, 500, 500, TimeUnit.MILLISECONDS);
+    }
+
     private static void tickPhaseTransitions() {
         int guard = 0;
         while (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.phaseEndsAt > 0 && System.currentTimeMillis() >= STATE.phaseEndsAt && guard < 8) {
@@ -912,6 +937,7 @@ public class Main {
     }
 
     private static Map<String, Object> gmStatePayload(Account account) {
+        boolean manager = canManageGame(account);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("phase", STATE.phase);
         payload.put("round", STATE.round);
@@ -923,7 +949,7 @@ public class Main {
             row.put("accountId", p.accountId);
             row.put("name", p.name);
             row.put("alive", p.alive);
-            row.put("role", p.role);
+            row.put("role", manager ? p.role : (p.alive ? null : p.role));
             Account a = DB.findAccount(p.accountId);
             row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
             return row;
@@ -937,15 +963,15 @@ public class Main {
         payload.put("finalStatements", STATE.finalStatements);
         payload.put("finalStatementPending", Math.max(0, STATE.finalStatementPlayerIds.size() - STATE.finalStatements.size()));
         payload.put("winner", STATE.winner);
-        payload.put("lastSheriffResult", STATE.lastSheriffResult);
-        payload.put("mafiaVoteTally", tally(STATE.mafiaVotes));
-        payload.put("dayVoteTally", tally(STATE.dayVotes));
-        payload.put("pendingMafiaVotes", Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()));
-        payload.put("pendingDayVotes", Math.max(0, aliveCount() - STATE.dayVotes.size()));
+        payload.put("lastSheriffResult", manager ? STATE.lastSheriffResult : "");
+        payload.put("mafiaVoteTally", manager ? tally(STATE.mafiaVotes) : Map.of());
+        payload.put("dayVoteTally", manager || STATE.publicDayVoteTally ? tally(STATE.dayVotes) : Map.of());
+        payload.put("pendingMafiaVotes", manager ? Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()) : 0);
+        payload.put("pendingDayVotes", manager ? Math.max(0, aliveCount() - STATE.dayVotes.size()) : 0);
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
-        payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
-        payload.put("playerChat", chatPayload(STATE.playerChat));
-        payload.put("canManage", canManageGame(account));
+        payload.put("mafiaChat", manager ? chatPayload(STATE.mafiaChat) : List.of());
+        payload.put("playerChat", manager ? chatPayload(STATE.playerChat) : List.of());
+        payload.put("canManage", manager);
         payload.put("room", roomPayload(DB.defaultRoom()));
         return payload;
     }
@@ -955,12 +981,15 @@ public class Main {
         payload.put("id", p.id);
         payload.put("name", p.name);
         payload.put("phase", STATE.phase);
+        payload.put("round", STATE.round);
         payload.put("alive", p.alive);
         payload.put("phaseRemainingSec", phaseRemainingSec());
         payload.put("role", "lobby".equals(STATE.phase) ? null : p.role);
         payload.put("roleDescription", roleDescription(p.role));
         payload.put("vigilanteShotsRemaining", p.vigilanteShotsRemaining);
         payload.put("sheriffResult", p.lastSheriffResult);
+        payload.put("sheriffResultTargetName", p.lastSheriffTargetName);
+        payload.put("lastDoctorTarget", p.lastDoctorTarget);
         payload.put("players", STATE.players.stream().map(other -> {
             Account a = DB.findAccount(other.accountId);
             Map<String, Object> row = new LinkedHashMap<>();
@@ -977,6 +1006,9 @@ public class Main {
         payload.put("finalStatementSubmitted", STATE.finalStatements.containsKey(p.id));
         payload.put("winner", STATE.winner);
         payload.put("mafiaVoteCurrent", STATE.mafiaVotes.get(p.id));
+        payload.put("sheriffTargetCurrent", "Sheriff".equals(p.role) ? STATE.sheriffTarget : null);
+        payload.put("doctorProtectCurrent", "Doctor".equals(p.role) ? STATE.doctorTarget : null);
+        payload.put("vigilanteTargetCurrent", "Vigilante".equals(p.role) ? STATE.vigilanteTarget : null);
         payload.put("dayVoteCurrent", STATE.dayVotes.get(p.id));
         payload.put("mafiaVoteSubmitted", STATE.mafiaVotes.containsKey(p.id));
         payload.put("dayVoteSubmitted", STATE.dayVotes.containsKey(p.id));
@@ -1515,6 +1547,7 @@ public class Main {
         boolean alive;
         String lastDoctorTarget;
         String lastSheriffResult;
+        String lastSheriffTargetName;
         int vigilanteShotsRemaining;
         Player(String id, String accountId, String name) {
             this.id = id;
@@ -1524,6 +1557,7 @@ public class Main {
             this.role = null;
             this.lastDoctorTarget = null;
             this.lastSheriffResult = null;
+            this.lastSheriffTargetName = null;
             this.vigilanteShotsRemaining = 0;
         }
     }

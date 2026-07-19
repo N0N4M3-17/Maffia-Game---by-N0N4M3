@@ -271,8 +271,13 @@ code {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.host-grid:has(#gm-setup-panel.hidden) {
+  grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr);
+}
+
 .play-grid {
-  grid-template-columns: minmax(280px, .8fr) minmax(320px, 1fr) minmax(280px, .9fr);
+  grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.35fr) minmax(270px, .82fr);
+  align-items: start;
 }
 
 .admin-grid {
@@ -285,6 +290,21 @@ code {
 
 .chat-panel {
   grid-column: span 3;
+}
+
+.action-panel-shell {
+  min-height: 335px;
+}
+
+.table-panel {
+  max-height: calc(100vh - 150px);
+  overflow: hidden;
+}
+
+.table-panel .list {
+  max-height: calc(100vh - 225px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .panel {
@@ -465,7 +485,36 @@ code {
 
 .stepper > span {
   color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
+.role-mini-icon {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #151923;
+  border: 1px solid var(--line);
+  color: var(--gold);
+}
+
+.role-mini-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.role-mini-icon.mafia { color: var(--red-2); }
+.role-mini-icon.sheriff { color: var(--blue); }
+.role-mini-icon.doctor { color: var(--green); }
+.role-mini-icon.town { color: #d9d3c2; }
 
 .stepper > div {
   display: grid;
@@ -528,17 +577,27 @@ code {
   white-space: nowrap;
 }
 
-.player-row em {
-  color: var(--green);
+.life-badge {
   font-style: normal;
   font-size: 13px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(89, 194, 137, .12);
+  border: 1px solid rgba(89, 194, 137, .35);
+  color: var(--green);
 }
 
 .player-row.dead {
   opacity: .62;
 }
 
-.player-row.dead em {
+.life-badge.dead {
+  background: rgba(207, 74, 74, .10);
+  border-color: rgba(207, 74, 74, .35);
   color: var(--red-2);
 }
 
@@ -552,6 +611,100 @@ code {
   background: #10141d;
   color: var(--muted);
   border: 1px solid var(--line);
+}
+
+.gm-console {
+  display: grid;
+  gap: 12px;
+}
+
+.gm-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-card, .feed-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #121722;
+}
+
+.stat-card {
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 12px;
+}
+
+.stat-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stat-card strong {
+  color: var(--gold);
+  font-size: 24px;
+}
+
+.stat-card.ok strong {
+  color: var(--green);
+}
+
+.gm-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.feed-card {
+  min-height: 132px;
+  padding: 12px;
+}
+
+.feed-card h4 {
+  margin: 0 0 8px;
+}
+
+.feed-lines {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.feed-lines div {
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #151923;
+}
+
+.feed-lines strong {
+  color: var(--gold);
+}
+
+.phase-guide {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 14px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(215, 182, 93, .35);
+  background: rgba(215, 182, 93, .09);
+}
+
+.phase-guide:empty {
+  display: none;
+}
+
+.phase-guide strong {
+  color: var(--gold);
+}
+
+.phase-guide span {
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .empty-state {
@@ -573,6 +726,28 @@ code {
   border-radius: 8px;
   border: 1px solid var(--gold);
   background: linear-gradient(160deg, #151923, #242a36);
+  animation: panelIn .35s ease both;
+}
+
+.role-symbol {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--gold);
+  background: #121722;
+  border: 1px solid var(--line);
+}
+
+.role-symbol svg {
+  width: 42px;
+  height: 42px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .role-card span {
@@ -581,22 +756,347 @@ code {
   font-weight: 900;
 }
 
-.role-card.mafia { border-color: var(--red-2); }
-.role-card.sheriff { border-color: var(--blue); }
-.role-card.doctor { border-color: var(--green); }
-.role-card.vigilante { border-color: var(--gold); }
-.role-card.town { border-color: #d9d3c2; }
+.role-card.revealed {
+  animation: rolePeek .42s ease both;
+}
+
+.role-card.revealed.mafia { border-color: var(--red-2); box-shadow: 0 0 0 1px rgba(207, 74, 74, .35), 0 20px 70px rgba(207, 74, 74, .16); }
+.role-card.revealed.mafia .role-symbol { color: var(--red-2); }
+.role-card.revealed.sheriff { border-color: var(--blue); box-shadow: 0 0 0 1px rgba(111, 168, 220, .28), 0 20px 70px rgba(111, 168, 220, .12); }
+.role-card.revealed.sheriff .role-symbol { color: var(--blue); }
+.role-card.revealed.doctor { border-color: var(--green); box-shadow: 0 0 0 1px rgba(89, 194, 137, .28), 0 20px 70px rgba(89, 194, 137, .12); }
+.role-card.revealed.doctor .role-symbol { color: var(--green); }
+.role-card.revealed.vigilante { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(215, 182, 93, .28), 0 20px 70px rgba(215, 182, 93, .12); }
+.role-card.revealed.town { border-color: #d9d3c2; box-shadow: 0 0 0 1px rgba(217, 211, 194, .2), 0 20px 70px rgba(217, 211, 194, .08); }
 
 .role-card.masked {
   background: repeating-linear-gradient(135deg, #151923 0 12px, #1d2330 12px 24px);
+  cursor: pointer;
+}
+
+.role-card.masked .role-symbol, .role-card.neutral .role-symbol {
+  color: var(--gold);
+}
+
+@keyframes rolePeek {
+  from { transform: translateY(0) rotateX(0); }
+  45% { transform: translateY(-6px) rotateX(7deg); }
+  to { transform: translateY(0) rotateX(0); }
+}
+
+.deal-stage {
+  min-height: 330px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 16px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(166, 51, 51, .18) 0 36%, rgba(11, 31, 26, .56) 36% 100%),
+    #10141d;
+}
+
+.deal-header {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+}
+
+.deal-header strong {
+  color: var(--red-2);
+  font-size: 22px;
+  text-transform: uppercase;
+}
+
+.deal-header span {
+  color: var(--muted);
+}
+
+.deal-table {
+  min-height: 230px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.2vw, 18px);
+  perspective: 1000px;
+}
+
+.deal-card {
+  width: clamp(72px, 8vw, 106px);
+  aspect-ratio: 2 / 3;
+  flex: 0 0 auto;
+  transform-style: preserve-3d;
+  animation: dealShuffle .72s ease both;
+  animation-delay: calc(var(--deal-index) * 70ms);
+}
+
+.deal-card.mine {
+  z-index: 2;
+  animation-name: dealMine;
+}
+
+.deal-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform .55s ease;
+}
+
+.deal-card.revealed .deal-card-inner {
+  transform: rotateY(180deg) translateY(-12px);
+}
+
+.deal-card-back, .deal-card-front {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid #3f3b72;
+  backface-visibility: hidden;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .28);
+}
+
+.deal-card-back {
+  background: #1d1d37;
+}
+
+.deal-card-back span {
+  width: 28%;
+  aspect-ratio: 1;
+  transform: rotate(45deg);
+  background: #474777;
+}
+
+.deal-card-front {
+  align-content: center;
+  gap: 8px;
+  padding: 10px;
+  transform: rotateY(180deg);
+  background: #171a25;
+  border-color: var(--gold);
+  text-align: center;
+}
+
+.deal-card.mine .deal-card-front {
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor, 0 0 40px rgba(207, 74, 74, .18);
+}
+
+.deal-card-front.mafia { color: var(--red-2); background: #330606; }
+.deal-card-front.sheriff { color: var(--blue); }
+.deal-card-front.doctor { color: var(--green); }
+.deal-card-front.vigilante { color: var(--gold); }
+.deal-card-front.town { color: #d9d3c2; }
+
+.deal-card-front svg {
+  width: 38px;
+  height: 38px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.deal-card-front strong, .deal-card-front small {
+  display: block;
+  color: currentColor;
+}
+
+.deal-card-front strong {
+  text-transform: uppercase;
+}
+
+.deal-card-front small {
+  font-size: 11px;
+}
+
+@keyframes dealShuffle {
+  from {
+    opacity: 0;
+    transform: translateX(calc((var(--deal-mid) - var(--deal-index)) * 34px)) translateY(-20px) rotate(-8deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) rotate(0);
+  }
+}
+
+@keyframes dealMine {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(.92) rotate(8deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-8px) scale(1.08) rotate(0);
+  }
+}
+
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .action-panel {
-  min-height: 190px;
+  min-height: 232px;
+  display: grid;
+  align-content: start;
+}
+
+.target-action {
+  display: grid;
+  gap: 12px;
+}
+
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 10px;
+}
+
+.target-tile {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #121722;
+  color: var(--text);
+  text-align: center;
+}
+
+.target-tile:hover, .target-tile.selected {
+  border-color: var(--green);
+  background: rgba(89, 194, 137, .12);
+}
+
+.target-tile > span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.target-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.target-avatar {
+  width: 50px;
+  height: 50px;
+  flex-basis: 50px;
+}
+
+.target-check {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 24px;
+  height: 24px;
+  display: none;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid #121722;
+  background: var(--green);
+  color: #07100c;
+}
+
+.target-check svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.target-tile.selected .target-check {
+  display: grid;
+}
+
+.skip-mark {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  background: #151923;
+  font-weight: 900;
+}
+
+.action-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(207, 74, 74, .6);
+  background: rgba(207, 74, 74, .12);
+  color: #ffb3b3;
+}
+
+.result-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #121722;
+}
+
+.result-card strong, .result-card span {
+  display: block;
+}
+
+.result-card span {
+  color: var(--muted);
+}
+
+.result-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #151923;
+  border: 1px solid var(--line);
+  color: var(--gold);
+}
+
+.result-icon svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.result-card.mafia .result-icon {
+  color: var(--red-2);
+}
+
+.result-card.town .result-icon {
+  color: var(--green);
 }
 
 .chat-log {
-  height: 140px;
+  height: 136px;
   overflow: auto;
   padding: 10px;
   border-radius: 8px;
@@ -734,8 +1234,33 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .host-grid:has(#gm-setup-panel.hidden) {
+    grid-template-columns: 1fr;
+  }
+
+  .role-panel {
+    order: 1;
+  }
+
+  .action-panel-shell {
+    order: 2;
+    min-height: 0;
+  }
+
+  .table-panel {
+    order: 3;
+    max-height: none;
+  }
+
+  .table-panel .list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
   .chat-panel {
     grid-column: auto;
+    order: 4;
   }
 
   .topbar {
@@ -771,8 +1296,28 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .gm-stat-grid, .gm-feed-grid {
+    grid-template-columns: 1fr;
+  }
+
   .chat-log {
     height: 180px;
+  }
+
+  .deal-stage {
+    min-height: 360px;
+  }
+
+  .deal-table {
+    align-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .deal-card {
+    width: clamp(58px, 20vw, 84px);
+    transform: rotate(calc((var(--deal-index) - var(--deal-mid)) * 2deg));
   }
 }
 
@@ -784,5 +1329,41 @@ code {
 
   .roster-panel {
     grid-row: span 2;
+  }
+
+  .play-grid {
+    grid-template-areas:
+      "role action table"
+      "chat chat table";
+  }
+
+  .role-panel {
+    grid-area: role;
+  }
+
+  .action-panel-shell {
+    grid-area: action;
+  }
+
+  .table-panel {
+    grid-area: table;
+  }
+
+  .chat-panel {
+    grid-area: chat;
+  }
+
+  .chat-panel .chat-log {
+    height: clamp(128px, 18vh, 190px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deal-card, .role-card {
+    animation: none;
+  }
+
+  .deal-card-inner {
+    transition: none;
   }
 }

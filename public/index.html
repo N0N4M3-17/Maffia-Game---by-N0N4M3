@@ -123,7 +123,7 @@
 
         <div id="tab-host" class="tab">
           <div class="content-grid host-grid">
-            <section class="panel">
+            <section id="gm-setup-panel" class="panel">
               <div class="panel-title">
                 <div>
                   <p class="eyebrow">Setup</p>
@@ -138,7 +138,7 @@
               </div>
             </section>
 
-            <section class="panel">
+            <section id="gm-timer-panel" class="panel">
               <p class="eyebrow">Clock</p>
               <h3>Phase timing</h3>
               <div id="timer-controls" class="timer-controls"></div>
@@ -161,10 +161,11 @@
               </div>
             </section>
 
-            <section class="panel">
+            <section id="gm-live-panel" class="panel gm-console-panel">
               <p class="eyebrow">GM feed</p>
-              <h3>Live state</h3>
-              <pre id="gm-action-status" class="state-feed"></pre>
+              <h3>Table control</h3>
+              <div id="gm-phase-guide" class="phase-guide"></div>
+              <div id="gm-action-status" class="gm-console"></div>
             </section>
           </div>
         </div>
@@ -179,7 +180,9 @@
                 <button id="join-default-btn" class="primary-button">Join current room</button>
               </div>
               <div id="role-state" class="hidden">
-                <div id="role-card" class="role-card">
+                <div id="deal-stage" class="deal-stage hidden"></div>
+                <div id="role-card" class="role-card" role="button" tabindex="0">
+                  <div id="role-symbol" class="role-symbol"></div>
                   <span id="role-name">Unknown</span>
                   <p id="role-desc"></p>
                   <p id="vigi-ammo"></p>
@@ -192,13 +195,14 @@
               </div>
             </section>
 
-            <section class="panel">
+            <section class="panel action-panel-shell">
               <p class="eyebrow">Action</p>
               <h3>Current move</h3>
+              <div id="player-phase-guide" class="phase-guide"></div>
               <div id="player-action-panel" class="action-panel"></div>
             </section>
 
-            <section class="panel">
+            <section class="panel table-panel">
               <p class="eyebrow">Table</p>
               <h3>Players</h3>
               <div id="player-list" class="list"></div>
