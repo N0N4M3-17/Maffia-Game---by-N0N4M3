@@ -821,9 +821,7 @@ public class Main {
     private static void checkWin() {
         long mafiaAlive = alivePlayersByRole("Mafia").size();
         long townAlive = STATE.players.stream().filter(p -> p.alive && !"Mafia".equals(p.role)).count();
-        String winner = null;
-        if (mafiaAlive == 0 && STATE.players.stream().anyMatch(p -> p.role != null)) winner = "Town";
-        else if (mafiaAlive >= townAlive && mafiaAlive > 0) winner = "Mafia";
+        String winner = GameRules.winnerFor(mafiaAlive, townAlive, STATE.players.stream().anyMatch(p -> p.role != null));
         if (winner != null) {
             STATE.phase = "game_over";
             STATE.winner = winner;

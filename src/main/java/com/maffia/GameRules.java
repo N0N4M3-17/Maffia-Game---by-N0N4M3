@@ -24,6 +24,12 @@ final class GameRules {
         return t;
     }
 
+    static String winnerFor(long mafiaAlive, long townAlive, boolean rolesAssigned) {
+        if (mafiaAlive == 0 && rolesAssigned) return "Town";
+        if (mafiaAlive >= townAlive && mafiaAlive > 0) return "Mafia";
+        return null;
+    }
+
     private static String winningTarget(Map<String, Integer> counts, int minimum) {
         String best = null;
         int bestCount = 0;

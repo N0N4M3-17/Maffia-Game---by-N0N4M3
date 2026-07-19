@@ -53,4 +53,21 @@ class GameRulesTest {
 
         assertEquals("target-a", GameRules.pluralityTarget(votes));
     }
+
+    @Test
+    void townWinsOnlyAfterAssignedRolesWhenNoMafiaRemain() {
+        assertEquals("Town", GameRules.winnerFor(0, 3, true));
+        assertNull(GameRules.winnerFor(0, 3, false));
+    }
+
+    @Test
+    void mafiaWinsAtParityOrMajority() {
+        assertEquals("Mafia", GameRules.winnerFor(1, 1, true));
+        assertEquals("Mafia", GameRules.winnerFor(2, 1, true));
+    }
+
+    @Test
+    void gameContinuesWhileTownOutnumbersMafia() {
+        assertNull(GameRules.winnerFor(1, 2, true));
+    }
 }
