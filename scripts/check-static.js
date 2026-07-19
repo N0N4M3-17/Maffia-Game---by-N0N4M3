@@ -74,6 +74,7 @@ assert((backend.match(/"locked", true, "phase", STATE\.phase/g) || []).length >=
 assert(backend.includes('startPhaseTicker') && backend.includes('scheduleAtFixedRate'), 'server must run an independent phase ticker');
 assert(backend.includes('lastDoctorTarget') && backend.includes('sheriffResultTargetName'), 'player payload must include action guidance context');
 assert(backend.includes('sheriffTargetCurrent') && backend.includes('doctorProtectCurrent') && backend.includes('vigilanteTargetCurrent'), 'player payload must preserve submitted action choices');
+assert(backend.includes('boolean mafia = "Mafia".equals(p.role)') && backend.includes('pendingMafiaVotes", mafia ?') && backend.includes('sheriffResult", sheriff ?') && backend.includes('lastDoctorTarget", doctor ?'), 'player payload must role-gate private action context');
 assert(backend.includes('ACTION_RESULT_HOLD_MS') && backend.includes('holdActionResult') && backend.includes('actionNoticeTitle'), 'Sheriff and Doctor submits must hold the phase briefly with visible action notices');
 assert(backend.includes('"/api/gm/players/"') && backend.includes('Seats can only be removed before the game starts'), 'GM must be able to remove lobby player seats before launch');
 assert(backend.includes('!Objects.equals(previous, stored)') && backend.includes('!target.equals(previous)'), 'unchanged repeated votes must not duplicate system messages');

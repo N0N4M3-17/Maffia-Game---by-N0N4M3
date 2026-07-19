@@ -1047,6 +1047,10 @@ public class Main {
     }
 
     private static Map<String, Object> playerStatePayload(Player p, Account account) {
+        boolean mafia = "Mafia".equals(p.role);
+        boolean sheriff = "Sheriff".equals(p.role);
+        boolean doctor = "Doctor".equals(p.role);
+        boolean vigilante = "Vigilante".equals(p.role);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", p.id);
         payload.put("name", p.name);
@@ -1056,10 +1060,10 @@ public class Main {
         payload.put("phaseRemainingSec", phaseRemainingSec());
         payload.put("role", "lobby".equals(STATE.phase) ? null : p.role);
         payload.put("roleDescription", roleDescription(p.role));
-        payload.put("vigilanteShotsRemaining", p.vigilanteShotsRemaining);
-        payload.put("sheriffResult", p.lastSheriffResult);
-        payload.put("sheriffResultTargetName", p.lastSheriffTargetName);
-        payload.put("lastDoctorTarget", p.lastDoctorTarget);
+        payload.put("vigilanteShotsRemaining", vigilante ? p.vigilanteShotsRemaining : 0);
+        payload.put("sheriffResult", sheriff ? p.lastSheriffResult : null);
+        payload.put("sheriffResultTargetName", sheriff ? p.lastSheriffTargetName : null);
+        payload.put("lastDoctorTarget", doctor ? p.lastDoctorTarget : null);
         payload.put("actionNoticeTitle", roleCanSeeActionNotice(p.role) ? nullToEmpty(STATE.actionNoticeTitle) : "");
         payload.put("actionNoticeBody", roleCanSeeActionNotice(p.role) ? playerActionNoticeBody(p) : "");
         payload.put("players", STATE.players.stream().map(other -> {
@@ -1077,21 +1081,21 @@ public class Main {
         payload.put("finalStatementEligible", STATE.finalStatementPlayerIds.contains(p.id));
         payload.put("finalStatementSubmitted", STATE.finalStatements.containsKey(p.id));
         payload.put("winner", STATE.winner);
-        payload.put("mafiaVoteCurrent", STATE.mafiaVotes.get(p.id));
-        payload.put("sheriffTargetCurrent", "Sheriff".equals(p.role) ? STATE.sheriffTarget : null);
-        payload.put("doctorProtectCurrent", "Doctor".equals(p.role) ? STATE.doctorTarget : null);
-        payload.put("vigilanteTargetCurrent", "Vigilante".equals(p.role) ? STATE.vigilanteTarget : null);
+        payload.put("mafiaVoteCurrent", mafia ? STATE.mafiaVotes.get(p.id) : null);
+        payload.put("sheriffTargetCurrent", sheriff ? STATE.sheriffTarget : null);
+        payload.put("doctorProtectCurrent", doctor ? STATE.doctorTarget : null);
+        payload.put("vigilanteTargetCurrent", vigilante ? STATE.vigilanteTarget : null);
         payload.put("dayVoteCurrent", STATE.dayVotes.get(p.id));
-        payload.put("mafiaVoteSubmitted", STATE.mafiaVotes.containsKey(p.id));
+        payload.put("mafiaVoteSubmitted", mafia && STATE.mafiaVotes.containsKey(p.id));
         payload.put("dayVoteSubmitted", STATE.dayVotes.containsKey(p.id));
-        payload.put("pendingMafiaVotes", Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()));
-        payload.put("pendingDayVotes", Math.max(0, aliveCount() - STATE.dayVotes.size()));
+        payload.put("pendingMafiaVotes", mafia ? Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()) : 0);
+        payload.put("pendingDayVotes", "day_vote".equals(STATE.phase) ? Math.max(0, aliveCount() - STATE.dayVotes.size()) : 0);
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("timerSettings", STATE.timerSettings.toMap());
         payload.put("room", roomPayload(DB.defaultRoom()));
         payload.put("account", accountPayload(account));
-        payload.put("mafiaChat", "Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase) ? chatPayload(STATE.mafiaChat) : List.of());
-        payload.put("mafiaTeam", "Mafia".equals(p.role)
+        payload.put("mafiaChat", mafia && p.alive && "night_mafia".equals(STATE.phase) ? chatPayload(STATE.mafiaChat) : List.of());
+        payload.put("mafiaTeam", mafia
                 ? STATE.players.stream()
                         .filter(other -> "Mafia".equals(other.role))
                         .map(other -> {

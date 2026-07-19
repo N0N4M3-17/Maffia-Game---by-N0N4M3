@@ -58,7 +58,7 @@ Treat the browser experience like five Unity-style scenes:
 | Core phase engine | **Implemented** | 95% | Timed night and day phases run server-side with an independent host ticker; executable edge-case tests remain. |
 | Supported role actions | **Implemented** | 90% | Mafia, Sheriff, Doctor, and Vigilante actions are implemented; end-to-end edge-case verification remains. |
 | Day voting and victory | **Implemented** | 85% | Voting, public-tally setting, elimination, and win detection exist; vote-rule acceptance tests are still needed. |
-| Chat and information controls | **Partially implemented** | 80% | Mafia chat is phase-gated; public player chat now has server send/visibility gates and a disabled/read-only UI, while broader payload privacy review remains. |
+| Chat and information controls | **Substantially implemented** | 90% | Mafia chat is phase-gated; public player chat has server send/visibility gates and a disabled/read-only UI; player payloads now role-gate private action context. |
 | Player/GM experience | **Partially implemented** | 97% | Functional responsive UI, portrait action tray, full-screen Night 0 deal scene, reusable peek/hide role card, clickable target cards with selection summaries, doctor warnings, sheriff result visuals, delayed Sheriff/Doctor result holds, GM/player phase guidance, pending-player GM helpers, a command-center GM scene, and GM observability exist; accessibility and broader polish remain. |
 | Test automation / quality gate | **In progress** | 25% | Static checks exist and executable JUnit coverage now covers vote majority, ties, abstentions, plurality helpers, win-condition decisions, and night-role phase ordering; broader role, night-resolution, authorization, and API smoke tests remain. |
 | Release operations and documentation | **In progress** | 65% | Java launch instructions, GM runbook, CI workflow, and release checklist exist; packaging and clean-environment verification remain. |
@@ -109,7 +109,7 @@ Treat the browser experience like five Unity-style scenes:
 ### M3 — Rules parity, privacy, and resilience: next priority
 
 - [x] Restrict general player chat to the intended phases and block dead players, matching the documented permission matrix.
-- [ ] Confirm all player-state payloads expose only role-authorized information in every phase.
+- [x] Confirm all player-state payloads expose only role-authorized information in every phase.
 - [ ] Decide and document the final day-vote rule: strict majority (as specified) versus current plurality behavior; then enforce and test it consistently.
 - [x] Define early-lock behavior for mafia and day votes, or remove it from the specification.
 - [x] Add a clear reconnect/session-recovery policy; preserve a player's identity across accidental refreshes where feasible.
