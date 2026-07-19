@@ -15,6 +15,9 @@ const state = {
   dealRenderKey: '',
   lastPlayerState: null,
   lastActionRenderKey: '',
+  lastGmConsoleRenderKey: '',
+  lastDeadOverviewRenderKey: '',
+  gmToolsOpen: false,
 };
 
 const roleLabels = {
@@ -86,6 +89,17 @@ function fmtSec(s) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0');
   const r = (sec % 60).toString().padStart(2, '0');
   return `${m}:${r}`;
+}
+
+function sceneRenderKey(value) {
+  return JSON.stringify(value, (key, item) => key === 'phaseRemainingSec' ? undefined : item);
+}
+
+function updateSceneTimers(root, seconds) {
+  if (!root) return;
+  root.querySelectorAll('[data-phase-timer]').forEach((el) => {
+    el.textContent = `${fmtSec(seconds || 0)} remaining`;
+  });
 }
 
 function showApp(authenticated) {
@@ -342,11 +356,32 @@ async function gmVoidGame() {
   setMessage('Game voided. No scores were recorded.');
 }
 
+async function gmSpiceAction(action, targetId = '') {
+  const paths = {
+    kill: '/api/gm/force-kill',
+    reveal: '/api/gm/reveal-role',
+    redraw: '/api/gm/redraw-alive',
+  };
+  const needsTarget = action === 'kill' || action === 'reveal';
+  if (needsTarget && !targetId) {
+    setMessage('Choose a GM tool target first.', true);
+    return;
+  }
+  await api(paths[action], { method: 'POST', body: JSON.stringify({ targetId }) });
+  state.lastGmConsoleRenderKey = '';
+  state.lastDeadOverviewRenderKey = '';
+  await refreshAll();
+  const labels = { kill: 'GM eliminated the target.', reveal: 'Role revealed.', redraw: 'Alive cards redrawn.' };
+  setMessage(labels[action] || 'GM tool applied.');
+}
+
 async function gmReturnLobby() {
   await api('/api/gm/return-lobby', { method: 'POST', body: '{}' });
   state.roleReveal = { revealed: false, acknowledged: false, lastPhase: '', lastRound: -1, lastRole: '' };
   state.dealRenderKey = '';
   state.lastActionRenderKey = '';
+  state.lastGmConsoleRenderKey = '';
+  state.lastDeadOverviewRenderKey = '';
   await refreshAll();
   setMessage('Returned to lobby with seated players.');
 }
@@ -401,11 +436,32 @@ async function refreshGm() {
   updateValidation(gm.playerCount);
   renderRoster(setupVisible ? (gm.players || []) : visiblePlayers, gm.canManage && setupVisible);
   $('gm-phase-guide').innerHTML = gmGuidanceMarkup(gm);
-  $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
-  $('gm-action-status').querySelectorAll('[data-gm-button]').forEach((button) => {
+  const gmRenderKey = sceneRenderKey({ gm, visiblePlayers, gmToolsOpen: state.gmToolsOpen });
+  if (state.lastGmConsoleRenderKey !== gmRenderKey) {
+    state.lastGmConsoleRenderKey = gmRenderKey;
+    $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
+    bindGmConsoleActions();
+  }
+  updateSceneTimers($('gm-action-status'), gm.phaseRemainingSec || 0);
+}
+
+function bindGmConsoleActions() {
+  const panel = $('gm-action-status');
+  panel.querySelectorAll('[data-gm-button]').forEach((button) => {
+    if (button.dataset.gmButton === 'tools') button.addEventListener('click', () => {
+      state.gmToolsOpen = !state.gmToolsOpen;
+      state.lastGmConsoleRenderKey = '';
+      refreshGm().catch((err) => setMessage(err.message, true));
+    });
     if (button.dataset.gmButton === 'next') button.addEventListener('click', () => gmNextPhase().catch((err) => setMessage(err.message, true)));
     if (button.dataset.gmButton === 'night') button.addEventListener('click', () => gmStartNight().catch((err) => setMessage(err.message, true)));
     if (button.dataset.gmButton === 'void') button.addEventListener('click', () => gmVoidGame().catch((err) => setMessage(err.message, true)));
+  });
+  panel.querySelectorAll('[data-gm-spice]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = panel.querySelector('[data-gm-tool-target]')?.value || '';
+      gmSpiceAction(button.dataset.gmSpice, target).catch((err) => setMessage(err.message, true));
+    });
   });
 }
 
@@ -464,6 +520,53 @@ function gmPlayerCard(player) {
   `;
 }
 
+function winnerDisplayName(stateLike) {
+  if (stateLike.winner === 'Voided') return 'Voided by GM';
+  const name = stateLike.winningPlayerName || '';
+  return name ? `${stateLike.winner} (${name})` : (stateLike.winner || 'Unknown');
+}
+
+function isTownAlignedRole(role) {
+  return !!role && role !== 'Mafia' && role !== 'Jester';
+}
+
+function playerWonGame(ps) {
+  if (!ps || !ps.winner || ps.winner === 'Voided') return false;
+  if (ps.winner === 'Mafia') return ps.role === 'Mafia';
+  if (ps.winner === 'Town') return isTownAlignedRole(ps.role);
+  if (ps.winner === 'Vigilante') return ps.id === ps.winningPlayerId || (!ps.winningPlayerId && ps.role === 'Vigilante');
+  if (ps.winner === 'Jester') return ps.id === ps.winningPlayerId;
+  return false;
+}
+
+function gameOverSceneMarkup(stateLike, options = {}) {
+  if (stateLike.phase !== 'game_over') return '';
+  const winner = stateLike.winner || 'Unknown';
+  const personal = options.personal ? playerWonGame(stateLike) : null;
+  const title = winner === 'Voided'
+    ? 'Game voided'
+    : (personal === null ? `${winner} victory` : (personal ? 'You won' : 'You lost'));
+  const subtitle = winner === 'Voided'
+    ? 'No scores were recorded.'
+    : `Winner: ${winnerDisplayName(stateLike)}`;
+  const role = winner === 'Voided' ? 'Hidden' : winner;
+  const roleClass = winner === 'Voided' ? 'neutral' : String(role).toLowerCase();
+  return `
+    <section class="game-over-scene ${personal === true ? 'won' : personal === false ? 'lost' : 'neutral'}">
+      <div class="victor-card ${roleClass}">
+        <span>${roleIcon(role)}</span>
+        <strong>${escapeHtml(winner === 'Voided' ? 'VOID' : winner)}</strong>
+        <em>${escapeHtml(stateLike.winningPlayerName || 'Final card')}</em>
+      </div>
+      <div class="outcome-copy">
+        <p class="eyebrow">Game over</p>
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(subtitle)}</p>
+      </div>
+    </section>
+  `;
+}
+
 function chatPreview(title, messages) {
   const lines = (messages || []).slice(-5).map((m) => `<div><strong>${escapeHtml(m.author)}</strong> ${escapeHtml(m.message)}</div>`).join('');
   return `
@@ -512,6 +615,7 @@ function gmConsoleMarkup(gm) {
   const players = gmVisiblePlayers(gm);
   const alive = players.filter((player) => player.alive).length;
   const dead = Math.max(0, players.length - alive);
+  const liveTargets = players.filter((player) => player.alive);
   const deaths = gm.morningDeaths?.length
     ? gm.morningDeaths.map((d) => `<div><strong>${escapeHtml(d.name)}</strong> ${escapeHtml(d.role || 'Unknown')}</div>`).join('')
     : '<p class="muted">No announced deaths.</p>';
@@ -519,14 +623,29 @@ function gmConsoleMarkup(gm) {
     const player = players.find((p) => p.id === id);
     return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${escapeHtml(message)}</div>`;
   }).join('');
+  const toolOptions = liveTargets.map((player) => `<option value="${escapeHtml(player.id)}">${escapeHtml(player.name)} (${escapeHtml(player.role || 'hidden')})</option>`).join('');
+  const toolsDisabled = gm.phase === 'lobby' || gm.phase === 'game_over';
+  const morningOnlyDisabled = gm.phase !== 'morning';
   return `
+    ${gameOverSceneMarkup(gm)}
     <div class="gm-command-shell">
       <aside class="gm-command-rail">
-        <div class="gm-master-badge">${roleIcon('Sheriff')}<strong>Game Master</strong></div>
+        <button class="gm-master-badge" type="button" data-gm-button="tools" aria-expanded="${state.gmToolsOpen ? 'true' : 'false'}">${roleIcon('Sheriff')}<strong>Game Master</strong></button>
+        <section class="gm-tools ${state.gmToolsOpen ? '' : 'hidden'}">
+          <h4>GM tools</h4>
+          <label>Target
+            <select data-gm-tool-target ${toolsDisabled || !liveTargets.length ? 'disabled' : ''}>
+              ${toolOptions || '<option value="">No alive targets</option>'}
+            </select>
+          </label>
+          <button class="secondary-button" data-gm-spice="reveal" ${toolsDisabled || !liveTargets.length ? 'disabled' : ''}>Reveal role</button>
+          <button class="danger-button" data-gm-spice="kill" ${morningOnlyDisabled || !liveTargets.length ? 'disabled' : ''}>Kill in morning</button>
+          <button class="secondary-button" data-gm-spice="redraw" ${morningOnlyDisabled || !liveTargets.length ? 'disabled' : ''}>Redraw alive cards</button>
+        </section>
         <div class="gm-phase-box">
           <span>Phase</span>
           <strong>${escapeHtml(phaseTitle(gm.phase, gm.round))}</strong>
-          <em>${fmtSec(gm.phaseRemainingSec || 0)} remaining</em>
+          <em data-phase-timer>${fmtSec(gm.phaseRemainingSec || 0)} remaining</em>
         </div>
         <div class="gm-control-stack">
           <button class="secondary-button" data-gm-button="next" ${gm.phase === 'game_over' ? 'disabled' : ''}>Advance phase</button>
@@ -607,13 +726,14 @@ function deadOverviewMarkup(ps) {
     pendingActionPlayers: ps.observerPendingActionPlayers || [],
   };
   return `
+    ${gameOverSceneMarkup(ps, { personal: true })}
     <div class="gm-command-shell dead-command-shell">
       <aside class="gm-command-rail">
         <div class="gm-master-badge">${roleIcon('Hidden')}<strong>Observer</strong></div>
         <div class="gm-phase-box">
           <span>Phase</span>
           <strong>${escapeHtml(phaseTitle(ps.phase, ps.round))}</strong>
-          <em>${fmtSec(ps.phaseRemainingSec || 0)} remaining</em>
+          <em data-phase-timer>${fmtSec(ps.phaseRemainingSec || 0)} remaining</em>
         </div>
         <section class="gm-rail-section">
           <h4>Role distribution</h4>
@@ -674,9 +794,15 @@ function renderDeadOverview(ps) {
   panel.classList.toggle('hidden', !canObserve);
   if (!canObserve) {
     target.innerHTML = '';
+    state.lastDeadOverviewRenderKey = '';
     return;
   }
-  target.innerHTML = deadOverviewMarkup(ps);
+  const overviewKey = sceneRenderKey(ps);
+  if (state.lastDeadOverviewRenderKey !== overviewKey) {
+    state.lastDeadOverviewRenderKey = overviewKey;
+    target.innerHTML = deadOverviewMarkup(ps);
+  }
+  updateSceneTimers(target, ps.phaseRemainingSec || 0);
 }
 
 function gmGuidanceMarkup(gm) {
@@ -825,7 +951,7 @@ function renderMobileActionTray(ps) {
 
 function playerGuidanceMarkup(ps) {
   if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<strong>Game voided</strong><span>The GM voided this game. No scores were recorded.</span>';
-  if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(ps.winner || 'unknown')}. Your score has been recorded.</span>`;
+  if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(winnerDisplayName(ps))}. Your score has been recorded.</span>`;
   if (!ps.alive && ps.phase !== 'final_statements') return '<strong>Observe only</strong><span>You are out of the round. Watch the table and keep private information private.</span>';
   if (ps.phase === 'night0') return '<strong>Role reveal</strong><span>Reveal privately, confirm when ready, then wait for the GM.</span>';
   if (ps.phase === 'night_mafia') {

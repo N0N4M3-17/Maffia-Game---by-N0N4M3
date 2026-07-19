@@ -21,7 +21,7 @@ Mafia 2.0 is a browser-based, local-network social-deduction game. One person ru
 
 - The game remains **LAN-hosted first**, but the next product layer now includes a persistent local account database, named rooms, local admin control, profile settings, and scores.
 - The GM remains an in-person facilitator, while the app owns role secrecy, legal actions, timers, vote resolution, and public outcomes.
-- The initial role set is Town, Mafia, Sheriff, Doctor, and Vigilante.
+- The initial role set is Town, Mafia, Sheriff, Doctor, Vigilante, and optional Jester.
 - Advanced role packs, matchmaking, and fully managed public hosting remain future work, not prerequisites for v1.
 
 ## 2. Definition of Done for v1
@@ -30,7 +30,7 @@ v1 is complete when a mixed group can run repeated LAN games end to end without 
 
 The release gate is all of the following:
 
-- A GM can configure and launch a valid game, and players can join using only a name.
+- A GM can configure and launch a valid game, and players can join through a lightweight local account and seated display name.
 - Every supported role can complete its legal action; illegal and late actions are rejected server-side.
 - The server advances phases by timer, resolves night actions and day voting correctly, reveals eliminations, and declares a winner.
 - Dead-player restrictions and private information boundaries work throughout a full game.
@@ -97,6 +97,8 @@ Treat the browser experience like five Unity-style scenes:
 - [x] Night resolution applies protection before mafia and vigilante attacks, allowing simultaneous deaths.
 - [x] Day voting supports target selection or abstention, resolution, role reveal, and a configurable public vote log.
 - [x] Win checks declare Town when no Mafia remain, Mafia when alive Mafia are at least the alive town-aligned count, Jester when voted out by day vote, and Vigilante when morning begins with only one Mafia and an armed Vigilante alive.
+- [x] Game over gives players an animated victory/loss scene with the winning faction or independent victor.
+- [x] GM command scene supports optional role reveal, morning kill, and alive-card redraw tools.
 - [x] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
 - [ ] Verify all role, tie, abstention, protection, and timer edge cases against executable tests.
   - [x] Add executable vote-helper tests for strict majority, ties, abstentions, and unique plurality behavior.
@@ -180,8 +182,8 @@ These are the next high-value UI features after the PR22 pass:
 - Internet matchmaking, public rooms, or remote hosting.
 - Cloud accounts, global rankings, or managed matchmaking.
 - Database-backed recovery or analytics.
-- Custom/third-party role packs beyond the initial five roles.
-- In-app GM override or moderation workflow; the GM resolves social disputes in person.
+- Custom/third-party role packs beyond the supported starter roles.
+- Full moderation, appeals, or audit workflows beyond the GM's optional table-spice controls.
 - Native mobile applications.
 
 ## 8. Status Update Protocol
