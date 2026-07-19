@@ -33,6 +33,7 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - GM sees all connected players and assigned roles once game starts.
 - Public player chat is restricted to morning, discussion, day vote, and game over; dead players are observe-only.
 - Newly eliminated players receive a timed final-statement phase and can submit one final public message.
+- Mafia and day votes advance early once a decisive majority is reached; day votes also resolve when every alive player has voted.
 
 ## Local data
 

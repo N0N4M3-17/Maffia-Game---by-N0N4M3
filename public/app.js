@@ -521,7 +521,8 @@ async function submitAction(action) {
     await refreshPlayer();
     return;
   }
-  await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
+  const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
+  if (result.locked) setMessage(`Vote locked. Advanced to ${phaseTitle(result.phase, '')}.`);
   state.lastActionRenderKey = '';
   await refreshPlayer();
 }

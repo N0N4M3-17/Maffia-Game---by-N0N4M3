@@ -477,7 +477,12 @@ public class Main {
                 Player voted = findPlayer(target);
                 if (voted != null) pushMafiaChat("SYSTEM", actor.name + " voted for " + voted.name);
                 int pending = Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size());
-                writeJson(ex, 200, Map.of("ok", true, "pendingMafiaVotes", pending));
+                if (majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null) {
+                    nextPhaseInternal();
+                    writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
+                    return;
+                }
+                writeJson(ex, 200, Map.of("ok", true, "pendingMafiaVotes", pending, "locked", false));
                 return;
             }
 
@@ -541,7 +546,12 @@ public class Main {
                     pushPlayerChat("SYSTEM", actor.name + " voted for " + votedName);
                 }
                 int pending = Math.max(0, aliveCount() - STATE.dayVotes.size());
-                writeJson(ex, 200, Map.of("ok", true, "pendingDayVotes", pending));
+                if (majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0) {
+                    nextPhaseInternal();
+                    writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
+                    return;
+                }
+                writeJson(ex, 200, Map.of("ok", true, "pendingDayVotes", pending, "locked", false));
                 return;
             }
 

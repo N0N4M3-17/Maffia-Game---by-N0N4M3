@@ -97,7 +97,7 @@ The release gate is all of the following:
 - [ ] Restrict general player chat to the intended phases and block dead players, matching the documented permission matrix.
 - [ ] Confirm all player-state payloads expose only role-authorized information in every phase.
 - [ ] Decide and document the final day-vote rule: strict majority (as specified) versus current plurality behavior; then enforce and test it consistently.
-- [ ] Define early-lock behavior for mafia and day votes, or remove it from the specification.
+- [x] Define early-lock behavior for mafia and day votes, or remove it from the specification.
 - [ ] Add a clear reconnect/session-recovery policy; preserve a player's identity across accidental refreshes where feasible.
 - [ ] Add input limits, duplicate-name policy, error messages, and basic abuse/rate protections appropriate for a LAN host.
 

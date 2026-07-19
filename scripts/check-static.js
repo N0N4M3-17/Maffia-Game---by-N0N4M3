@@ -39,6 +39,8 @@ assert(backend.includes('payload.put("mafiaTeam"'), 'mafia teammate identities m
 assert(backend.includes('PUBLIC_CHAT_PHASES'), 'public chat phase restrictions must be server-side');
 assert(backend.includes('final_statements') && backend.includes('finalStatementPlayerIds'), 'final-statements phase must be implemented server-side');
 assert(backend.includes('Final statement already submitted'), 'final statements must be limited to one per eligible player');
+assert(backend.includes('majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null'), 'mafia votes must early-lock on majority');
+assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0'), 'day votes must resolve on majority or all votes submitted');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
 assert(backend.includes('Another room is active'), 'room switching must be blocked while a table is in progress');
 assert(backend.includes('PUBLIC_URL') && backend.includes('publicUrlSecure'), 'server info must expose secure public URL status');
