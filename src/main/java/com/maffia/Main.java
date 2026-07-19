@@ -51,6 +51,7 @@ public class Main {
     private static final String ADMIN_EMAIL = "gabi17hun@gmail.com";
     private static final String ADMIN_USERNAME = "n0n4m3-admin";
     private static final String ADMIN_PASSWORD = "admin123";
+    private static final long ACTION_RESULT_HOLD_MS = 4500L;
 
     public static void main(String[] args) throws IOException {
         synchronized (LOCK) {
@@ -473,7 +474,7 @@ public class Main {
                 );
                 STATE.timerSettings = t;
                 if (b.has("publicDayVoteTally")) STATE.publicDayVoteTally = b.get("publicDayVoteTally").getAsBoolean();
-                if (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase)) {
+                if (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.actionNoticeTitle == null) {
                     STATE.phaseEndsAt = System.currentTimeMillis() + (phaseDurationSec(STATE.phase) * 1000L);
                 }
                 writeJson(ex, 200, Map.of("ok", true, "timerSettings", t.toMap(), "publicDayVoteTally", STATE.publicDayVoteTally));
@@ -591,6 +592,7 @@ public class Main {
                 JsonObject b = readBodyJson(ex);
                 Player actor = requireAlivePlayer(ex, b, "Sheriff", "night_sheriff");
                 if (actor == null) return;
+                if (STATE.sheriffTarget != null) { writeJson(ex, 400, Map.of("error", "Sheriff investigation is already submitted.")); return; }
                 String target = b.get("targetId").getAsString();
                 Player t = findPlayer(target);
                 if (t == null || !t.alive) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
@@ -598,8 +600,8 @@ public class Main {
                 actor.lastSheriffTargetName = t.name;
                 actor.lastSheriffResult = "Mafia".equals(t.role) ? "Mafia" : "Town";
                 STATE.lastSheriffResult = actor.name + " -> " + t.name + " is " + actor.lastSheriffResult;
-                nextPhaseInternal();
-                writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
+                holdActionResult("Investigation submitted", actor.name + " investigated " + t.name + ": " + actor.lastSheriffResult + ". Advancing shortly.");
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "hold", true, "phase", STATE.phase));
                 return;
             }
 
@@ -607,12 +609,14 @@ public class Main {
                 JsonObject b = readBodyJson(ex);
                 Player actor = requireAlivePlayer(ex, b, "Doctor", "night_doctor");
                 if (actor == null) return;
+                if (STATE.doctorTarget != null) { writeJson(ex, 400, Map.of("error", "Doctor protection is already submitted.")); return; }
                 String target = b.get("targetId").getAsString();
-                if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
+                Player t = findPlayer(target);
+                if (t == null || !t.alive) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 if (target.equals(actor.lastDoctorTarget)) { writeJson(ex, 400, Map.of("error", "Doctor cannot protect same target consecutively.")); return; }
                 STATE.doctorTarget = target;
-                nextPhaseInternal();
-                writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
+                holdActionResult("Protection submitted", actor.name + " protected " + t.name + ". Advancing shortly.");
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "hold", true, "phase", STATE.phase));
                 return;
             }
 
@@ -963,9 +967,21 @@ public class Main {
     }
 
     private static void setPhase(String phase) {
+        if (!Objects.equals(STATE.phase, phase)) clearActionNotice();
         STATE.phase = phase;
         int sec = phaseDurationSec(phase);
         STATE.phaseEndsAt = sec > 0 ? System.currentTimeMillis() + sec * 1000L : 0L;
+    }
+
+    private static void holdActionResult(String title, String body) {
+        STATE.actionNoticeTitle = title;
+        STATE.actionNoticeBody = body;
+        STATE.phaseEndsAt = System.currentTimeMillis() + ACTION_RESULT_HOLD_MS;
+    }
+
+    private static void clearActionNotice() {
+        STATE.actionNoticeTitle = null;
+        STATE.actionNoticeBody = null;
     }
 
     private static Map<String, Object> gmStatePayload(Account account) {
@@ -1002,6 +1018,8 @@ public class Main {
         payload.put("pendingDayVotes", manager ? Math.max(0, aliveCount() - STATE.dayVotes.size()) : 0);
         payload.put("currentActionName", manager ? currentActionName() : "");
         payload.put("pendingActionPlayers", manager ? pendingActionPlayerNames() : List.of());
+        payload.put("actionNoticeTitle", manager ? nullToEmpty(STATE.actionNoticeTitle) : "");
+        payload.put("actionNoticeBody", manager ? nullToEmpty(STATE.actionNoticeBody) : "");
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("mafiaChat", manager ? chatPayload(STATE.mafiaChat) : List.of());
         payload.put("playerChat", manager ? chatPayload(STATE.playerChat) : List.of());
@@ -1024,6 +1042,8 @@ public class Main {
         payload.put("sheriffResult", p.lastSheriffResult);
         payload.put("sheriffResultTargetName", p.lastSheriffTargetName);
         payload.put("lastDoctorTarget", p.lastDoctorTarget);
+        payload.put("actionNoticeTitle", roleCanSeeActionNotice(p.role) ? nullToEmpty(STATE.actionNoticeTitle) : "");
+        payload.put("actionNoticeBody", roleCanSeeActionNotice(p.role) ? playerActionNoticeBody(p) : "");
         payload.put("players", STATE.players.stream().map(other -> {
             Account a = DB.findAccount(other.accountId);
             Map<String, Object> row = new LinkedHashMap<>();
@@ -1253,6 +1273,21 @@ public class Main {
         };
     }
 
+    private static boolean roleCanSeeActionNotice(String role) {
+        return ("night_sheriff".equals(STATE.phase) && "Sheriff".equals(role) && STATE.sheriffTarget != null)
+                || ("night_doctor".equals(STATE.phase) && "Doctor".equals(role) && STATE.doctorTarget != null);
+    }
+
+    private static String playerActionNoticeBody(Player p) {
+        if ("night_sheriff".equals(STATE.phase) && "Sheriff".equals(p.role) && p.lastSheriffResult != null) {
+            return "Your result is visible below. The table will advance shortly.";
+        }
+        if ("night_doctor".equals(STATE.phase) && "Doctor".equals(p.role) && STATE.doctorTarget != null) {
+            return "Your protection is locked in. The table will advance shortly.";
+        }
+        return "";
+    }
+
     private static List<String> pendingActionPlayerNames() {
         return switch (STATE.phase) {
             case "night_mafia" -> alivePlayersByRole("Mafia").stream()
@@ -1295,6 +1330,7 @@ public class Main {
     private static boolean hasMinimumTestRoles(RoleConfig cfg) { return cfg.mafia >= 1 && (cfg.sheriff + cfg.doctor + cfg.vigilante) >= 1 && cfg.town >= 1; }
     private static int intValue(JsonObject body, String key) { return body.has(key) ? body.get(key).getAsInt() : -1; }
     private static int positiveSecondOrDefault(JsonObject body, String key, int fallback) { return body.has(key) ? Math.max(1, body.get(key).getAsInt()) : fallback; }
+    private static String nullToEmpty(String value) { return value == null ? "" : value; }
 
     private static List<String> rolePool(RoleConfig cfg) {
         List<String> pool = new ArrayList<>();
@@ -1511,6 +1547,8 @@ public class Main {
         int round = 0;
         String winner = null;
         String lastSheriffResult = null;
+        String actionNoticeTitle = null;
+        String actionNoticeBody = null;
         long phaseEndsAt = 0L;
         boolean scoresRecorded = false;
 
@@ -1538,6 +1576,8 @@ public class Main {
             round = 0;
             winner = null;
             lastSheriffResult = null;
+            actionNoticeTitle = null;
+            actionNoticeBody = null;
             phaseEndsAt = 0L;
             scoresRecorded = false;
             players = new ArrayList<>();
@@ -1563,6 +1603,8 @@ public class Main {
             round = 0;
             winner = null;
             lastSheriffResult = null;
+            actionNoticeTitle = null;
+            actionNoticeBody = null;
             phaseEndsAt = 0L;
             scoresRecorded = false;
             mafiaVotes = new HashMap<>();

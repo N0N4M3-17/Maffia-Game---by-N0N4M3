@@ -70,10 +70,11 @@ assert(backend.includes('final_statements') && backend.includes('finalStatementP
 assert(backend.includes('Final statement already submitted'), 'final statements must be limited to one per eligible player');
 assert(backend.includes('majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null'), 'mafia votes must early-lock on majority');
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0'), 'day votes must resolve on majority or all votes submitted');
-assert((backend.match(/"locked", true, "phase", STATE\.phase/g) || []).length >= 4, 'Mafia, Sheriff, Doctor, and day submits must return locked phase advancement when action resolution completes');
+assert((backend.match(/"locked", true, "phase", STATE\.phase/g) || []).length >= 2 && (backend.match(/"locked", true, "hold", true, "phase", STATE\.phase/g) || []).length >= 2, 'night and vote submits must return immediate locks or visible hold locks when action resolution completes');
 assert(backend.includes('startPhaseTicker') && backend.includes('scheduleAtFixedRate'), 'server must run an independent phase ticker');
 assert(backend.includes('lastDoctorTarget') && backend.includes('sheriffResultTargetName'), 'player payload must include action guidance context');
 assert(backend.includes('sheriffTargetCurrent') && backend.includes('doctorProtectCurrent') && backend.includes('vigilanteTargetCurrent'), 'player payload must preserve submitted action choices');
+assert(backend.includes('ACTION_RESULT_HOLD_MS') && backend.includes('holdActionResult') && backend.includes('actionNoticeTitle'), 'Sheriff and Doctor submits must hold the phase briefly with visible action notices');
 assert(backend.includes('!Objects.equals(previous, stored)') && backend.includes('!target.equals(previous)'), 'unchanged repeated votes must not duplicate system messages');
 assert(backend.includes('boolean manager = canManageGame(account)') && backend.includes('manager ? chatPayload(STATE.mafiaChat) : List.of()'), 'GM state must hide private console data from non-managers');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
@@ -99,6 +100,7 @@ assert(app.includes('gmGuidanceMarkup') && app.includes('playerGuidanceMarkup') 
 assert(app.includes("gm.phase === 'lobby'") && app.includes('gmConsoleMarkup') && !app.includes('textContent = JSON.stringify'), 'GM active-round feed must be rendered as UI instead of raw JSON');
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
 assert(app.includes('pendingActionMarkup') && app.includes('pending-chip'), 'GM console must render current pending action players');
+assert(app.includes('gm-action-notice') && app.includes('result.hold'), 'GM/player action result hold notices must be rendered before auto-advance');
 assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
 assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
 assert(app.includes('dealRenderKey') && app.includes('stage.querySelectorAll') && app.includes('This copied card becomes your private role card below.'), 'Night 0 deal animation must render once per deal and then update existing cards');
@@ -109,6 +111,7 @@ assert(app.includes('role-peeking') && app.includes('Tap to peek. Tap again to h
 assert(app.includes('selected-target-summary') && app.includes('Action committed. Advanced to'), 'action picker must show selected target and refresh after locked submits');
 assert(app.includes('renderMobileActionTray') && app.includes('currentTargetLabel') && app.includes('phaseRemainingSec'), 'mobile action tray must render phase, timer, alive count, and selected target');
 assert(app.includes('role-mini-icon') && app.includes('Vigilante shots'), 'setup role controls must show role symbols and vigilante ammunition setup');
+assert(app.includes('state.settingsDirty = true') && app.includes("public-day-tally').addEventListener('change'"), 'timer controls must preserve edited values while polling');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
@@ -118,6 +121,7 @@ assert(read('src/main/resources/public/styles.css').includes('.play-grid.deal-sc
 assert(read('src/main/resources/public/styles.css').includes('.play-grid.role-peeking') && read('src/main/resources/public/styles.css').includes('.selected-target-summary'), 'role peek and selected-target UI states must be styled');
 assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tray') && read('src/main/resources/public/styles.css').includes('#tray-timer'), 'mobile action tray must be styled for portrait play');
 assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');
+assert(read('src/main/resources/public/styles.css').includes('.gm-action-notice'), 'GM action result notice must be styled as a feed element');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

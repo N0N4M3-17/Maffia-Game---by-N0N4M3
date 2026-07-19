@@ -275,6 +275,9 @@ function renderTimerControls() {
   $('timer-controls').innerHTML = Object.keys(timerLabels).map((key) => `
     <label>${timerLabels[key]}<input id="set-${key}" type="number" min="1" value="${state.timerSettings[key]}"></label>
   `).join('');
+  $('timer-controls').querySelectorAll('input').forEach((input) => input.addEventListener('input', () => {
+    state.settingsDirty = true;
+  }));
 }
 
 function adjustRole(role, delta) {
@@ -425,12 +428,19 @@ function tallyMarkup(title, tally, players) {
 function pendingActionMarkup(gm) {
   const pending = gm.pendingActionPlayers || [];
   const actionName = gm.currentActionName || 'Current action';
+  const notice = gm.actionNoticeTitle ? `
+    <div class="gm-action-notice">
+      <strong>${escapeHtml(gm.actionNoticeTitle)}</strong>
+      <span>${escapeHtml(gm.actionNoticeBody || '')}</span>
+    </div>
+  ` : '';
   const body = pending.length
     ? pending.map((name) => `<span class="pending-chip">${escapeHtml(name)}</span>`).join('')
     : '<p class="muted">No one is pending right now.</p>';
   return `
     <section class="feed-card pending-card">
       <h4>${escapeHtml(actionName)}</h4>
+      ${notice}
       <div class="pending-list">${body}</div>
     </section>
   `;
@@ -608,14 +618,14 @@ function playerGuidanceMarkup(ps) {
     return '<strong>Night action</strong><span>Wait silently while Mafia acts.</span>';
   }
   if (ps.phase === 'night_sheriff') {
-    if (ps.role === 'Sheriff') return ps.sheriffResult
-      ? '<strong>Investigation complete</strong><span>Your result is shown below. Keep it private until discussion.</span>'
+    if (ps.role === 'Sheriff') return ps.sheriffResult || ps.actionNoticeTitle
+      ? `<strong>${escapeHtml(ps.actionNoticeTitle || 'Investigation complete')}</strong><span>${escapeHtml(ps.actionNoticeBody || 'Your result is shown below. Keep it private until discussion.')}</span>`
       : '<strong>Investigate</strong><span>Choose one alive player to inspect.</span>';
     return '<strong>Night action</strong><span>Wait silently while the Sheriff acts.</span>';
   }
   if (ps.phase === 'night_doctor') {
-    if (ps.role === 'Doctor') return ps.doctorProtectCurrent
-      ? '<strong>Protection submitted</strong><span>Your protected target is selected below.</span>'
+    if (ps.role === 'Doctor') return ps.doctorProtectCurrent || ps.actionNoticeTitle
+      ? `<strong>${escapeHtml(ps.actionNoticeTitle || 'Protection submitted')}</strong><span>${escapeHtml(ps.actionNoticeBody || 'Your protected target is selected below.')}</span>`
       : '<strong>Protect</strong><span>Choose one alive player. You cannot repeat last night.</span>';
     return '<strong>Night action</strong><span>Wait silently while the Doctor acts.</span>';
   }
@@ -825,12 +835,13 @@ function actionPicker(action, ps, options) {
     : '';
   const doctorRepeat = action === 'submit-doctor' && selected && selected === ps.lastDoctorTarget;
   const needsTarget = !options.includeAbstain && !selected;
+  const locked = (action === 'submit-sheriff' && !!ps.sheriffTargetCurrent) || (action === 'submit-doctor' && !!ps.doctorProtectCurrent);
   return `
-    <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}">
+    <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}" data-locked="${locked ? 'true' : 'false'}">
       <input id="act-target" type="hidden" value="${escapeHtml(selected)}">
       <div class="target-grid">${abstainTile}${tiles || '<p class="muted">No alive targets available.</p>'}</div>
       <p id="selected-target-summary" class="selected-target-summary ${selectedName ? '' : 'hidden'}">Selected: <strong>${escapeHtml(selectedName)}</strong></p>
-      <button class="primary-button" data-action="${action}" ${doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(options.label)}</button>
+      <button class="primary-button" data-action="${action}" ${locked || doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(locked ? 'Submitted' : options.label)}</button>
       <p id="action-warning" class="action-warning ${doctorRepeat ? '' : 'hidden'}">Doctors cannot protect the same player on consecutive nights. Choose another alive player.</p>
       <p class="muted">${escapeHtml(options.hint)}</p>
       ${options.extra || ''}
@@ -867,7 +878,8 @@ function refreshActionChoice(panel) {
   const selectedTile = panel.querySelector('.target-tile.selected');
   const doctorRepeat = panel.dataset.targetAction === 'submit-doctor' && selected && selected === panel.dataset.lastDoctorTarget;
   const needsTarget = panel.dataset.requiresTarget === 'true' && !selected;
-  if (button) button.disabled = doctorRepeat || needsTarget;
+  const locked = panel.dataset.locked === 'true';
+  if (button) button.disabled = locked || doctorRepeat || needsTarget;
   if (warning) warning.classList.toggle('hidden', !doctorRepeat);
   if (summary) {
     const label = selectedTile?.querySelector('span:last-child')?.textContent || '';
@@ -880,6 +892,14 @@ function refreshActionChoice(panel) {
 function bindActionTargets(panel) {
   const targetInput = panel.querySelector('#act-target');
   if (!targetInput) return;
+  if (panel.dataset.locked === 'true') {
+    panel.querySelectorAll('[data-target-id]').forEach((tile) => {
+      tile.disabled = true;
+      tile.setAttribute('aria-disabled', 'true');
+    });
+    refreshActionChoice(panel);
+    return;
+  }
   panel.querySelectorAll('[data-target-id]').forEach((tile) => tile.addEventListener('click', () => {
     targetInput.value = tile.dataset.targetId || '';
     state.pendingTargetByPhase[panel.dataset.storeKey] = targetInput.value;
@@ -948,7 +968,7 @@ async function submitAction(action) {
   const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
   if (result.locked) {
     if (storeKey) delete state.pendingTargetByPhase[storeKey];
-    setMessage(`Action committed. Advanced to ${phaseTitle(result.phase, '')}.`);
+    setMessage(result.hold ? 'Action committed. Showing the result before the phase advances.' : `Action committed. Advanced to ${phaseTitle(result.phase, '')}.`);
     state.lastActionRenderKey = '';
     await refreshAll();
     return;
@@ -1089,6 +1109,7 @@ function bindEvents() {
   $('save-setup-btn').addEventListener('click', () => saveSetup().catch((err) => setMessage(err.message, true)));
   $('launch-game-btn').addEventListener('click', () => launchGame().catch((err) => setMessage(err.message, true)));
   $('save-timers-btn').addEventListener('click', () => saveTimerSettings().catch((err) => setMessage(err.message, true)));
+  $('public-day-tally').addEventListener('change', () => { state.settingsDirty = true; });
   $('start-night-btn').addEventListener('click', () => gmStartNight().catch((err) => setMessage(err.message, true)));
   $('next-phase-btn').addEventListener('click', () => gmNextPhase().catch((err) => setMessage(err.message, true)));
   $('void-game-btn').addEventListener('click', () => gmVoidGame().catch((err) => setMessage(err.message, true)));
