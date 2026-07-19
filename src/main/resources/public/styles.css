@@ -595,6 +595,152 @@ code {
   min-height: 190px;
 }
 
+.target-action {
+  display: grid;
+  gap: 12px;
+}
+
+.target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 10px;
+}
+
+.target-tile {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #121722;
+  color: var(--text);
+  text-align: center;
+}
+
+.target-tile:hover, .target-tile.selected {
+  border-color: var(--green);
+  background: rgba(89, 194, 137, .12);
+}
+
+.target-tile span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.target-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.target-avatar {
+  width: 50px;
+  height: 50px;
+  flex-basis: 50px;
+}
+
+.target-check {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 24px;
+  height: 24px;
+  display: none;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid #121722;
+  background: var(--green);
+  color: #07100c;
+}
+
+.target-check svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.target-tile.selected .target-check {
+  display: grid;
+}
+
+.skip-mark {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  background: #151923;
+  font-weight: 900;
+}
+
+.action-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(207, 74, 74, .6);
+  background: rgba(207, 74, 74, .12);
+  color: #ffb3b3;
+}
+
+.result-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #121722;
+}
+
+.result-card strong, .result-card span {
+  display: block;
+}
+
+.result-card span {
+  color: var(--muted);
+}
+
+.result-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #151923;
+  border: 1px solid var(--line);
+  color: var(--gold);
+}
+
+.result-icon svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.result-card.mafia .result-icon {
+  color: var(--red-2);
+}
+
+.result-card.town .result-icon {
+  color: var(--green);
+}
+
 .chat-log {
   height: 140px;
   overflow: auto;

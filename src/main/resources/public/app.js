@@ -461,11 +461,79 @@ function renderRole(ps) {
   }
 }
 
-function targetOptions(ps, includeAbstain = false, allowSelf = false) {
-  const alive = (ps.players || []).filter((p) => p.alive && (allowSelf || p.id !== ps.id));
-  let options = includeAbstain ? '<option value="">Abstain / skip</option>' : '<option value="">Choose target</option>';
-  for (const p of alive) options += `<option value="${p.id}">${escapeHtml(p.name)}</option>`;
-  return options;
+function aliveTargets(ps, allowSelf = false) {
+  return (ps.players || []).filter((p) => p.alive && (allowSelf || p.id !== ps.id));
+}
+
+function submittedTarget(ps, action) {
+  if (action === 'submit-mafia') return ps.mafiaVoteCurrent || '';
+  if (action === 'submit-sheriff') return ps.sheriffTargetCurrent || '';
+  if (action === 'submit-doctor') return ps.doctorProtectCurrent || '';
+  if (action === 'submit-vigilante') return ps.vigilanteTargetCurrent || '';
+  if (action === 'submit-day') return ps.dayVoteCurrent || '';
+  return '';
+}
+
+function actionStoreKey(ps, action) {
+  return `${ps.round}|${ps.phase}|${ps.role}|${action}`;
+}
+
+function resultIcon(kind) {
+  if (kind === 'Mafia') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M10 22h20l4 6H6l4-6Z"/><path d="M14 11h12l3 11H11l3-11Z"/><path d="M11 21h18"/></svg>';
+  }
+  if (kind === 'Town') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20 20 10l12 10"/><path d="M12 19v13h16V19"/><path d="M17 32v-8h6v8"/></svg>';
+  }
+  return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m11 21 6 6 13-15"/></svg>';
+}
+
+function sheriffResultMarkup(ps) {
+  if (!ps.sheriffResult) return '';
+  const target = ps.sheriffResultTargetName ? `${escapeHtml(ps.sheriffResultTargetName)} is` : 'Result';
+  return `
+    <div class="result-card ${ps.sheriffResult === 'Mafia' ? 'mafia' : 'town'}">
+      <span class="result-icon">${resultIcon(ps.sheriffResult)}</span>
+      <div><strong>${target} ${escapeHtml(ps.sheriffResult)}</strong><span>${ps.sheriffResult === 'Mafia' ? 'Mafia alignment confirmed.' : 'Town alignment confirmed.'}</span></div>
+    </div>
+  `;
+}
+
+function targetTile(player, selected) {
+  return `
+    <button class="target-tile ${selected ? 'selected' : ''}" type="button" data-target-id="${escapeHtml(player.id)}" aria-pressed="${selected ? 'true' : 'false'}">
+      <span class="target-frame">
+        ${avatar(player, 'avatar target-avatar')}
+        <span class="target-check">${resultIcon('check')}</span>
+      </span>
+      <span>${escapeHtml(player.name)}</span>
+    </button>
+  `;
+}
+
+function actionPicker(action, ps, options) {
+  const storeKey = actionStoreKey(ps, action);
+  const existing = Object.prototype.hasOwnProperty.call(state.pendingTargetByPhase, storeKey)
+    ? state.pendingTargetByPhase[storeKey]
+    : submittedTarget(ps, action);
+  const selected = existing ?? '';
+  const targets = aliveTargets(ps, !!options.allowSelf);
+  const tiles = targets.map((player) => targetTile(player, selected === player.id)).join('');
+  const abstainTile = options.includeAbstain
+    ? `<button class="target-tile skip ${selected === '' ? 'selected' : ''}" type="button" data-target-id="" aria-pressed="${selected === '' ? 'true' : 'false'}"><span class="target-frame"><span class="skip-mark">--</span><span class="target-check">${resultIcon('check')}</span></span><span>${escapeHtml(options.skipLabel || 'Skip')}</span></button>`
+    : '';
+  const doctorRepeat = action === 'submit-doctor' && selected && selected === ps.lastDoctorTarget;
+  const needsTarget = !options.includeAbstain && !selected;
+  return `
+    <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}">
+      <input id="act-target" type="hidden" value="${escapeHtml(selected)}">
+      <div class="target-grid">${abstainTile}${tiles || '<p class="muted">No alive targets available.</p>'}</div>
+      <button class="primary-button" data-action="${action}" ${doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(options.label)}</button>
+      <p id="action-warning" class="action-warning ${doctorRepeat ? '' : 'hidden'}">Doctors cannot protect the same player on consecutive nights. Choose another alive player.</p>
+      <p class="muted">${escapeHtml(options.hint)}</p>
+      ${options.extra || ''}
+    </div>
+  `;
 }
 
 function actionMarkup(ps) {
@@ -477,27 +545,51 @@ function actionMarkup(ps) {
     return '<p class="muted">Final statements are in progress. Listen carefully.</p>';
   }
   if (!ps.alive) return '<p class="danger-text">You are dead. Observe only.</p>';
-  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionSelect('submit-mafia', targetOptions(ps), 'Submit mafia vote', `${ps.pendingMafiaVotes || 0} mafia pending.`);
-  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionSelect('submit-sheriff', targetOptions(ps), 'Investigate', ps.sheriffResult ? `Result: ${escapeHtml(ps.sheriffResult)}` : 'No result yet.');
-  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionSelect('submit-doctor', targetOptions(ps, false, true), 'Protect', 'You may protect yourself, but not repeat last target.');
-  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return actionSelect('submit-vigilante', targetOptions(ps, true), 'Shoot / skip', 'Leave blank to skip.');
-  if (ps.phase === 'day_vote') return actionSelect('submit-day', targetOptions(ps, true), 'Submit vote', `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`);
+  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionPicker('submit-mafia', ps, { label: 'Submit mafia vote', hint: `${ps.pendingMafiaVotes || 0} mafia pending.` });
+  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionPicker('submit-sheriff', ps, { label: 'Investigate', hint: 'Choose one alive player to inspect.', extra: sheriffResultMarkup(ps) });
+  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionPicker('submit-doctor', ps, { label: 'Protect', hint: 'You may protect yourself, but cannot repeat last night.', allowSelf: true });
+  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return actionPicker('submit-vigilante', ps, { label: 'Shoot / skip', hint: 'Choose an alive player or skip to save the shot.', includeAbstain: true, skipLabel: 'Skip shot' });
+  if (ps.phase === 'day_vote') return actionPicker('submit-day', ps, { label: 'Submit vote', hint: `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`, includeAbstain: true, skipLabel: 'Abstain' });
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
   if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;
   return '<p class="muted">No action right now.</p>';
 }
 
-function actionSelect(action, options, label, hint) {
-  return `<div class="form-stack"><select id="act-target">${options}</select><button class="primary-button" data-action="${action}">${label}</button><p class="muted">${hint}</p></div>`;
+function refreshActionChoice(panel) {
+  const selected = panel.querySelector('#act-target')?.value || '';
+  const button = panel.querySelector('[data-action]');
+  const warning = panel.querySelector('#action-warning');
+  const doctorRepeat = panel.dataset.targetAction === 'submit-doctor' && selected && selected === panel.dataset.lastDoctorTarget;
+  const needsTarget = panel.dataset.requiresTarget === 'true' && !selected;
+  if (button) button.disabled = doctorRepeat || needsTarget;
+  if (warning) warning.classList.toggle('hidden', !doctorRepeat);
+  if (doctorRepeat) setMessage('Doctor rule: you cannot protect the same target on consecutive nights.', true);
+}
+
+function bindActionTargets(panel) {
+  const targetInput = panel.querySelector('#act-target');
+  if (!targetInput) return;
+  panel.querySelectorAll('[data-target-id]').forEach((tile) => tile.addEventListener('click', () => {
+    targetInput.value = tile.dataset.targetId || '';
+    state.pendingTargetByPhase[panel.dataset.storeKey] = targetInput.value;
+    panel.querySelectorAll('[data-target-id]').forEach((candidate) => {
+      const selected = candidate === tile;
+      candidate.classList.toggle('selected', selected);
+      candidate.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+    refreshActionChoice(panel);
+  }));
+  refreshActionChoice(panel);
 }
 
 function renderPlayerAction(ps) {
-  const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
+  const actionKey = `${ps.round}|${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.mafiaVoteCurrent}|${ps.sheriffTargetCurrent}|${ps.doctorProtectCurrent}|${ps.vigilanteTargetCurrent}|${ps.dayVoteCurrent}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.sheriffResultTargetName}|${ps.lastDoctorTarget}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
   if (state.lastActionRenderKey === actionKey) return;
   state.lastActionRenderKey = actionKey;
   $('player-action-panel').innerHTML = actionMarkup(ps);
   $('player-action-panel').querySelectorAll('[data-action]').forEach((btn) => btn.addEventListener('click', () => submitAction(btn.dataset.action)));
+  $('player-action-panel').querySelectorAll('.target-action').forEach(bindActionTargets);
 }
 
 function renderPlayerList(players) {
@@ -543,6 +635,11 @@ async function submitAction(action) {
   }
   const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
   if (result.locked) setMessage(`Vote locked. Advanced to ${phaseTitle(result.phase, '')}.`);
+  else if (action === 'submit-sheriff') setMessage('Investigation complete.');
+  else if (action === 'submit-doctor') setMessage('Protection submitted.');
+  else if (action === 'submit-vigilante') setMessage(targetId ? 'Shot submitted.' : 'Shot skipped.');
+  else if (action === 'submit-mafia') setMessage('Mafia vote submitted.');
+  else if (action === 'submit-day') setMessage('Vote submitted.');
   state.lastActionRenderKey = '';
   await refreshPlayer();
 }

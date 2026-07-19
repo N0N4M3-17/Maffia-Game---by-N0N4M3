@@ -60,6 +60,10 @@ assert(backend.includes('final_statements') && backend.includes('finalStatementP
 assert(backend.includes('Final statement already submitted'), 'final statements must be limited to one per eligible player');
 assert(backend.includes('majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null'), 'mafia votes must early-lock on majority');
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0'), 'day votes must resolve on majority or all votes submitted');
+assert(backend.includes('startPhaseTicker') && backend.includes('scheduleAtFixedRate'), 'server must run an independent phase ticker');
+assert(backend.includes('lastDoctorTarget') && backend.includes('sheriffResultTargetName'), 'player payload must include action guidance context');
+assert(backend.includes('sheriffTargetCurrent') && backend.includes('doctorProtectCurrent') && backend.includes('vigilanteTargetCurrent'), 'player payload must preserve submitted action choices');
+assert(backend.includes('!Objects.equals(previous, stored)') && backend.includes('!target.equals(previous)'), 'unchanged repeated votes must not duplicate system messages');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
 assert(backend.includes('Another room is active'), 'room switching must be blocked while a table is in progress');
 assert(backend.includes('"/api/my-player"') && backend.includes('findPlayerByAccount(account.id)'), 'server must expose account-based player seat recovery');
@@ -68,6 +72,10 @@ assert(html.includes('data-copy-target="lan-url"') && html.includes('data-copy-t
 assert(html.includes('admin-create-user-form'), 'admin create-user form must exist');
 assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText'), 'invite copy action must be wired');
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
+assert(app.includes('target-tile') && app.includes('data-target-id') && !app.includes('function actionSelect'), 'player actions must use clickable target tiles instead of dropdown selects');
+assert(app.includes('ps.round') && app.includes('doctorProtectCurrent') && app.includes('vigilanteTargetCurrent'), 'action choices must be keyed by round and restored after submit');
+assert(app.includes('Doctor rule: you cannot protect the same target') && app.includes('lastDoctorTarget'), 'doctor repeat-target warning must be wired');
+assert(app.includes('sheriffResultMarkup') && app.includes('sheriffResultTargetName') && app.includes('Mafia alignment confirmed'), 'sheriff result visual must be wired');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
