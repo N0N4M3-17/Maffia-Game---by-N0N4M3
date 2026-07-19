@@ -62,6 +62,7 @@ assert(backend.includes('majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Ma
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0'), 'day votes must resolve on majority or all votes submitted');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
 assert(backend.includes('Another room is active'), 'room switching must be blocked while a table is in progress');
+assert(backend.includes('"/api/my-player"') && backend.includes('findPlayerByAccount(account.id)'), 'server must expose account-based player seat recovery');
 assert(backend.includes('PUBLIC_URL') && backend.includes('publicUrlSecure'), 'server info must expose secure public URL status');
 assert(html.includes('data-copy-target="lan-url"') && html.includes('data-copy-target="public-url"'), 'invite links must have copy controls');
 assert(html.includes('admin-create-user-form'), 'admin create-user form must exist');
@@ -69,6 +70,7 @@ assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
+assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

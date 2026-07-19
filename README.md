@@ -30,6 +30,7 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - Profile settings with display-name changes, score history, and max 100x100 profile image uploads.
 - GM-hosted room lobby in browser.
 - Players join from their authenticated account.
+- Player seats recover from the signed-in account after refresh where possible.
 - GM configures role counts (including Town manually).
 - GM starts game into **Night 0**.
 - Testing launch rules: minimum 3 players, with at least 1 Mafia, 1 Sheriff/Doctor/Vigilante, and 1 Town.

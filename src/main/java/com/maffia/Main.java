@@ -371,6 +371,22 @@ public class Main {
                 return;
             }
 
+            if ("GET".equals(method) && "/api/my-player".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                Player player = findPlayerByAccount(account.id);
+                if (player == null) {
+                    writeJson(ex, 200, Map.of("playerId", "", "joined", false));
+                    return;
+                }
+                writeJson(ex, 200, Map.of(
+                        "playerId", player.id,
+                        "joined", true,
+                        "room", roomPayload(DB.findRoom(player.roomId) == null ? DB.defaultRoom() : DB.findRoom(player.roomId))
+                ));
+                return;
+            }
+
             if ("POST".equals(method) && "/api/join".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
