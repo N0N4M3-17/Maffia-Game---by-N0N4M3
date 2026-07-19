@@ -7,6 +7,7 @@ Maffia Game ported to hybrid mode (Browser/Phone capacity).
 ### Requirements
 - Java 17+
 - Maven 3.9+
+- Node.js 22+ for local static checks and the optional `npm start` launcher.
 
 ### Start server
 
@@ -14,11 +15,14 @@ Maffia Game ported to hybrid mode (Browser/Phone capacity).
 mvn exec:java
 ```
 
+Alternatively, if Node.js is already installed, `npm start` delegates to the same Maven Java host.
+
 Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 
 ## Current implementation status
 
 - Java backend host for LAN browser play.
+- GitHub Actions CI runs static checks and Maven tests on pull requests.
 - Persistent local account registry with email/username login.
 - Seeded local admin account: `gabi17hun@gmail.com` / `n0n4m3-admin` with password `admin123`.
 - Browser admin screen for creating, editing, and deleting the local player base, scores, usernames, emails, and passwords.
@@ -59,3 +63,5 @@ The Rooms screen will show that URL as the secure public invite. Do not expose t
 
 - [Spec v1 (Sections 1–2): Phase State Machine + Role Permission Matrix](docs/SPEC_V1.md)
 - [Product plan: aims, milestones, completion marks, and v1 release gates](docs/PRODUCT_PLAN.md)
+- [GM runbook: hosting, rooms, admin, gameplay operation, and troubleshooting](docs/GM_RUNBOOK.md)
+- [Release checklist: source checks, LAN/public smoke tests, privacy checks, and known limitations](docs/RELEASE_CHECKLIST.md)
