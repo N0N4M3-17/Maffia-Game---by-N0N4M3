@@ -3,7 +3,7 @@ const state = {
   playerId: localStorage.getItem('playerId') || null,
   roles: { mafia: 2, sheriff: 1, doctor: 1, vigilante: 0, town: 1 },
   vigilanteShots: 1,
-  timerSettings: { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, discussionSec: 60, dayVoteSec: 60 },
+  timerSettings: { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, finalStatementSec: 45, discussionSec: 60, dayVoteSec: 60 },
   publicDayVoteTally: true,
   rooms: [],
   serverInfo: {},
@@ -29,6 +29,7 @@ const timerLabels = {
   nightDoctorSec: 'Doctor',
   nightVigilanteSec: 'Vigilante',
   morningSec: 'Morning',
+  finalStatementSec: 'Final words',
   discussionSec: 'Discussion',
   dayVoteSec: 'Vote',
 };
@@ -354,6 +355,8 @@ async function refreshGm() {
     remaining: gm.phaseRemainingSec,
     winner: gm.winner,
     morningDeaths: gm.morningDeaths,
+    finalStatementPending: gm.finalStatementPending,
+    finalStatements: gm.finalStatements,
     mafiaVotesPending: gm.pendingMafiaVotes,
     dayVotesPending: gm.pendingDayVotes,
     dayVoteTally: gm.dayVoteTally,
@@ -369,6 +372,7 @@ function phaseTitle(phase, round) {
     night_doctor: `Night ${round}: Doctor`,
     night_vigilante: `Night ${round}: Vigilante`,
     morning: 'Morning report',
+    final_statements: 'Final statements',
     discussion: 'Discussion',
     day_vote: 'Day vote',
     game_over: 'Game over',
@@ -445,6 +449,13 @@ function targetOptions(ps, includeAbstain = false, allowSelf = false) {
 }
 
 function actionMarkup(ps) {
+  if (ps.phase === 'final_statements') {
+    if (ps.finalStatementEligible && !ps.finalStatementSubmitted) {
+      return '<div class="form-stack"><textarea id="final-statement-input" maxlength="240" placeholder="Your final statement"></textarea><button class="primary-button" data-action="submit-final">Submit final statement</button><p class="muted">One message, max 240 characters.</p></div>';
+    }
+    if (ps.finalStatementEligible) return '<p class="muted">Final statement submitted. Waiting for the table.</p>';
+    return '<p class="muted">Final statements are in progress. Listen carefully.</p>';
+  }
   if (!ps.alive) return '<p class="danger-text">You are dead. Observe only.</p>';
   if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionSelect('submit-mafia', targetOptions(ps), 'Submit mafia vote', `${ps.pendingMafiaVotes || 0} mafia pending.`);
   if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionSelect('submit-sheriff', targetOptions(ps), 'Investigate', ps.sheriffResult ? `Result: ${escapeHtml(ps.sheriffResult)}` : 'No result yet.');
@@ -462,7 +473,7 @@ function actionSelect(action, options, label, hint) {
 }
 
 function renderPlayerAction(ps) {
-  const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}`;
+  const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
   if (state.lastActionRenderKey === actionKey) return;
   state.lastActionRenderKey = actionKey;
   $('player-action-panel').innerHTML = actionMarkup(ps);
@@ -499,6 +510,17 @@ async function submitAction(action) {
     'submit-vigilante': '/api/player/vigilante-shoot',
     'submit-day': '/api/player/day-vote',
   };
+  if (action === 'submit-final') {
+    const message = $('final-statement-input')?.value.trim() || '';
+    if (!message) {
+      setMessage('Final statement cannot be empty.', true);
+      return;
+    }
+    await api('/api/player/chat', { method: 'POST', body: JSON.stringify({ playerId: state.playerId, message }) });
+    state.lastActionRenderKey = '';
+    await refreshPlayer();
+    return;
+  }
   await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
   state.lastActionRenderKey = '';
   await refreshPlayer();

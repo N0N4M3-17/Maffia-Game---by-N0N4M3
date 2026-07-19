@@ -86,11 +86,11 @@ The release gate is all of the following:
 - [x] Night resolution applies protection before mafia and vigilante attacks, allowing simultaneous deaths.
 - [x] Day voting supports target selection or abstention, resolution, role reveal, and a configurable public vote log.
 - [x] Win checks declare Town when no Mafia remain and Mafia when alive Mafia are at least the alive non-Mafia count.
-- [ ] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
+- [x] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
 - [ ] Verify all role, tie, abstention, protection, and timer edge cases against executable tests.
 
 **Exit mark:** A facilitator can run one complete round without manual calculation.
-**Remaining to close:** Resolve the final-statements specification decision and test the rule engine.
+**Remaining to close:** Add executable rule-engine tests for the final-statements, vote, role, protection, timer, and abstention paths.
 
 ### M3 — Rules parity, privacy, and resilience: next priority
 

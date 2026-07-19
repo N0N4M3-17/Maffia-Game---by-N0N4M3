@@ -39,7 +39,7 @@ button {
   cursor: pointer;
 }
 
-input, select {
+input, select, textarea {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -47,6 +47,11 @@ input, select {
   background: #121722;
   color: var(--text);
   padding: 9px 10px;
+}
+
+textarea {
+  min-height: 112px;
+  resize: vertical;
 }
 
 label {
