@@ -61,6 +61,7 @@ assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKD
 assert(backend.includes('"POST".equals(method) && "/api/admin/users".equals(path)'), 'admin must be able to create user accounts');
 assert(backend.includes('"/api/gm/void"') && backend.includes('"Voided"') && backend.includes('No scores were recorded'), 'GM must be able to void a game without recording scores');
 assert(backend.includes('"/api/gm/return-lobby"') && backend.includes('returnToLobbyKeepingSeats'), 'GM must be able to return from outcome scene to lobby while keeping seats');
+assert(backend.includes('pendingActionPlayers') && backend.includes('pendingActionPlayerNames') && backend.includes('currentActionName'), 'GM state must expose current pending action names');
 assert(backend.includes('adminCount()') && backend.includes('At least one admin account must remain.'), 'admin management must prevent last-admin lockout');
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount())'), 'day vote resolution must use strict majority');
 assert(backend.includes('payload.put("mafiaTeam"'), 'mafia teammate identities must be in private mafia payload');
@@ -97,6 +98,7 @@ assert(app.includes('life-badge'), 'player list must use explicit alive/dead sta
 assert(app.includes('gmGuidanceMarkup') && app.includes('playerGuidanceMarkup') && app.includes('Vote submitted'), 'GM and player phase guidance must be wired');
 assert(app.includes("gm.phase === 'lobby'") && app.includes('gmConsoleMarkup') && !app.includes('textContent = JSON.stringify'), 'GM active-round feed must be rendered as UI instead of raw JSON');
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
+assert(app.includes('pendingActionMarkup') && app.includes('pending-chip'), 'GM console must render current pending action players');
 assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
 assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
 assert(app.includes('dealRenderKey') && app.includes('stage.querySelectorAll') && app.includes('This copied card becomes your private role card below.'), 'Night 0 deal animation must render once per deal and then update existing cards');
@@ -113,6 +115,7 @@ assert(read('src/main/resources/public/styles.css').includes('grid-template-area
 assert(read('src/main/resources/public/styles.css').includes('@keyframes dealShuffle') && read('src/main/resources/public/styles.css').includes('prefers-reduced-motion'), 'role deal animation must include reduced-motion support');
 assert(read('src/main/resources/public/styles.css').includes('.play-grid.role-peeking') && read('src/main/resources/public/styles.css').includes('.selected-target-summary'), 'role peek and selected-target UI states must be styled');
 assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tray') && read('src/main/resources/public/styles.css').includes('#tray-timer'), 'mobile action tray must be styled for portrait play');
+assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

@@ -422,6 +422,20 @@ function tallyMarkup(title, tally, players) {
   `;
 }
 
+function pendingActionMarkup(gm) {
+  const pending = gm.pendingActionPlayers || [];
+  const actionName = gm.currentActionName || 'Current action';
+  const body = pending.length
+    ? pending.map((name) => `<span class="pending-chip">${escapeHtml(name)}</span>`).join('')
+    : '<p class="muted">No one is pending right now.</p>';
+  return `
+    <section class="feed-card pending-card">
+      <h4>${escapeHtml(actionName)}</h4>
+      <div class="pending-list">${body}</div>
+    </section>
+  `;
+}
+
 function gmConsoleMarkup(gm) {
   const players = gm.players || [];
   const deaths = gm.morningDeaths?.length
@@ -439,6 +453,7 @@ function gmConsoleMarkup(gm) {
       ${statCard('Day votes pending', gm.pendingDayVotes ?? 0)}
     </div>
     <div class="gm-feed-grid">
+      ${pendingActionMarkup(gm)}
       <section class="feed-card">
         <h4>Night / vote outcomes</h4>
         <div class="feed-lines">${deaths}</div>

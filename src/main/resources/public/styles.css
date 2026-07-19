@@ -700,6 +700,33 @@ code {
   margin: 0 0 8px;
 }
 
+.pending-card {
+  border-color: rgba(215, 182, 93, .42);
+  background: linear-gradient(160deg, rgba(215, 182, 93, .08), #121722 52%);
+}
+
+.pending-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pending-chip {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(215, 182, 93, .35);
+  background: rgba(215, 182, 93, .10);
+  color: var(--text);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .feed-lines {
   display: grid;
   gap: 6px;

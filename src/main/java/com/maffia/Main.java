@@ -1000,6 +1000,8 @@ public class Main {
         payload.put("dayVoteTally", manager || STATE.publicDayVoteTally ? tally(STATE.dayVotes) : Map.of());
         payload.put("pendingMafiaVotes", manager ? Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()) : 0);
         payload.put("pendingDayVotes", manager ? Math.max(0, aliveCount() - STATE.dayVotes.size()) : 0);
+        payload.put("currentActionName", manager ? currentActionName() : "");
+        payload.put("pendingActionPlayers", manager ? pendingActionPlayerNames() : List.of());
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("mafiaChat", manager ? chatPayload(STATE.mafiaChat) : List.of());
         payload.put("playerChat", manager ? chatPayload(STATE.playerChat) : List.of());
@@ -1236,6 +1238,51 @@ public class Main {
 
     private static String pluralityTarget(Map<String, String> voteMap) {
         return GameRules.pluralityTarget(voteMap);
+    }
+
+    private static String currentActionName() {
+        return switch (STATE.phase) {
+            case "night0" -> "Role reveal";
+            case "night_mafia" -> "Mafia vote";
+            case "night_sheriff" -> "Sheriff investigation";
+            case "night_doctor" -> "Doctor protection";
+            case "night_vigilante" -> "Vigilante choice";
+            case "final_statements" -> "Final statements";
+            case "day_vote" -> "Day vote";
+            default -> "";
+        };
+    }
+
+    private static List<String> pendingActionPlayerNames() {
+        return switch (STATE.phase) {
+            case "night_mafia" -> alivePlayersByRole("Mafia").stream()
+                    .filter(p -> !STATE.mafiaVotes.containsKey(p.id))
+                    .map(p -> p.name)
+                    .collect(Collectors.toList());
+            case "night_sheriff" -> alivePlayersByRole("Sheriff").stream()
+                    .filter(p -> STATE.sheriffTarget == null)
+                    .map(p -> p.name)
+                    .collect(Collectors.toList());
+            case "night_doctor" -> alivePlayersByRole("Doctor").stream()
+                    .filter(p -> STATE.doctorTarget == null)
+                    .map(p -> p.name)
+                    .collect(Collectors.toList());
+            case "night_vigilante" -> alivePlayersByRole("Vigilante").stream()
+                    .filter(p -> STATE.vigilanteTarget == null)
+                    .map(p -> p.name)
+                    .collect(Collectors.toList());
+            case "final_statements" -> STATE.finalStatementPlayerIds.stream()
+                    .filter(id -> !STATE.finalStatements.containsKey(id))
+                    .map(Main::findPlayer)
+                    .filter(Objects::nonNull)
+                    .map(p -> p.name)
+                    .collect(Collectors.toList());
+            case "day_vote" -> STATE.players.stream()
+                    .filter(p -> p.alive && !STATE.dayVotes.containsKey(p.id))
+                    .map(p -> p.name)
+                    .collect(Collectors.toList());
+            default -> List.of();
+        };
     }
 
     private static boolean aliveRoleExists(String role) { return aliveByRole(role) != null; }
