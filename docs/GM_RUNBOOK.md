@@ -87,6 +87,14 @@ The server owns timers, legal actions, private information, and phase transition
 
 The GM can manually advance the phase when needed.
 
+### GM spice tools
+
+Open the **Game Master** control in the active command scene to use optional table interventions:
+
+- Reveal role: publicly reveal one seated player's role.
+- Kill in morning: eliminate one alive player during the morning phase.
+- Redraw alive cards: reshuffle only living players' current roles during the morning phase; dead players remain dead and keep their cards.
+
 ## 8. Scores
 
 When the game reaches game over, scores are recorded to local player profiles:
@@ -95,6 +103,7 @@ When the game reaches game over, scores are recorded to local player profiles:
 - Town-aligned players win when Town wins.
 - A lynched Jester wins alone on a Jester victory.
 - Vigilante wins on the special armed morning duel victory.
+- All players see an animated game-over scene with the winning faction or independent victor.
 - Games, wins, and losses persist in `data/mafia-db.json`.
 
 ## 9. Troubleshooting

@@ -534,6 +534,7 @@ public class Main {
                 }
                 STATE.phase = "game_over";
                 STATE.winner = "Voided";
+                STATE.winningPlayerId = null;
                 STATE.phaseEndsAt = 0L;
                 STATE.scoresRecorded = true;
                 pushPlayerChat("SYSTEM", "The GM voided this game. No scores were recorded.");
@@ -566,6 +567,72 @@ public class Main {
                 }
                 STATE.reset();
                 writeJson(ex, 200, Map.of("ok", true));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/gm/force-kill".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can use GM tools."));
+                    return;
+                }
+                if (!"morning".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "GM kills are only available during morning."));
+                    return;
+                }
+                JsonObject b = readBodyJson(ex);
+                Player target = findPlayer(text(b, "targetId"));
+                if (target == null || !target.alive) {
+                    writeJson(ex, 400, Map.of("error", "Target must be alive."));
+                    return;
+                }
+                target.alive = false;
+                addDeathForAnnouncement(target);
+                pushPlayerChat("SYSTEM", "GM eliminated " + target.name + " during morning.");
+                checkWin();
+                writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase, "winner", nullToEmpty(STATE.winner)));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/gm/reveal-role".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can use GM tools."));
+                    return;
+                }
+                if ("lobby".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "Roles are not assigned yet."));
+                    return;
+                }
+                JsonObject b = readBodyJson(ex);
+                Player target = findPlayer(text(b, "targetId"));
+                if (target == null || target.role == null) {
+                    writeJson(ex, 400, Map.of("error", "Target must have an assigned role."));
+                    return;
+                }
+                if (!STATE.revealedPlayerIds.contains(target.id)) STATE.revealedPlayerIds.add(target.id);
+                pushPlayerChat("SYSTEM", "GM revealed " + target.name + " as " + target.role + ".");
+                writeJson(ex, 200, Map.of("ok", true));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/gm/redraw-alive".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can use GM tools."));
+                    return;
+                }
+                if (!"morning".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "Alive-card redraw is only available during morning."));
+                    return;
+                }
+                redrawAliveRoles();
+                pushPlayerChat("SYSTEM", "GM redrew the alive role cards.");
+                checkWin();
+                writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase, "winner", nullToEmpty(STATE.winner)));
                 return;
             }
 
@@ -767,6 +834,7 @@ public class Main {
         STATE.winner = null;
         STATE.winningPlayerId = null;
         STATE.scoresRecorded = false;
+        STATE.revealedPlayerIds = new ArrayList<>();
         setPhase("night0");
         writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
     }
@@ -924,6 +992,37 @@ public class Main {
         DB.save();
     }
 
+    private static void redrawAliveRoles() {
+        List<Player> alive = STATE.players.stream().filter(p -> p.alive).collect(Collectors.toList());
+        List<String> roles = alive.stream().map(p -> p.role).collect(Collectors.toCollection(ArrayList::new));
+        Collections.shuffle(roles);
+        STATE.mafiaVotes.clear();
+        STATE.dayVotes.clear();
+        STATE.sheriffTarget = null;
+        STATE.doctorTarget = null;
+        STATE.vigilanteTarget = null;
+        STATE.vigilanteActionSubmitted = false;
+        STATE.lastSheriffResult = null;
+        clearActionNotice();
+        STATE.revealedPlayerIds.removeIf(id -> {
+            Player p = findPlayer(id);
+            return p != null && p.alive;
+        });
+        for (int i = 0; i < alive.size(); i++) {
+            Player p = alive.get(i);
+            p.role = roles.get(i);
+            p.lastDoctorTarget = null;
+            p.lastSheriffResult = null;
+            p.lastSheriffTargetName = null;
+            p.vigilanteShotsRemaining = "Vigilante".equals(p.role) ? STATE.config.vigilanteShots : 0;
+        }
+    }
+
+    private static String winnerPlayerName() {
+        Player p = STATE.winningPlayerId == null ? null : findPlayer(STATE.winningPlayerId);
+        return p == null ? "" : p.name;
+    }
+
     private static Account requireAccount(HttpExchange ex) throws IOException {
         String token = sessionToken(ex);
         Session session = token == null ? null : DB.data.sessions.get(token);
@@ -1053,6 +1152,8 @@ public class Main {
         payload.put("finalStatements", STATE.finalStatements);
         payload.put("finalStatementPending", Math.max(0, STATE.finalStatementPlayerIds.size() - STATE.finalStatements.size()));
         payload.put("winner", STATE.winner);
+        payload.put("winningPlayerId", STATE.winningPlayerId);
+        payload.put("winningPlayerName", winnerPlayerName());
         payload.put("lastSheriffResult", manager ? STATE.lastSheriffResult : "");
         payload.put("mafiaVoteTally", manager ? tally(STATE.mafiaVotes) : Map.of());
         payload.put("dayVoteTally", manager || STATE.publicDayVoteTally ? tally(STATE.dayVotes) : Map.of());
@@ -1096,7 +1197,7 @@ public class Main {
             row.put("id", other.id);
             row.put("name", other.name);
             row.put("alive", other.alive);
-            row.put("revealedRole", other.alive ? null : other.role);
+            row.put("revealedRole", other.alive && !STATE.revealedPlayerIds.contains(other.id) ? null : other.role);
             row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
             return row;
         }).toList());
@@ -1126,6 +1227,8 @@ public class Main {
         payload.put("finalStatementEligible", STATE.finalStatementPlayerIds.contains(p.id));
         payload.put("finalStatementSubmitted", STATE.finalStatements.containsKey(p.id));
         payload.put("winner", STATE.winner);
+        payload.put("winningPlayerId", STATE.winningPlayerId);
+        payload.put("winningPlayerName", winnerPlayerName());
         payload.put("mafiaVoteCurrent", mafia ? STATE.mafiaVotes.get(p.id) : null);
         payload.put("sheriffTargetCurrent", sheriff ? STATE.sheriffTarget : null);
         payload.put("doctorProtectCurrent", doctor ? STATE.doctorTarget : null);
@@ -1652,6 +1755,7 @@ public class Main {
         List<Map<String, String>> morningDeaths = new ArrayList<>();
         List<String> finalStatementPlayerIds = new ArrayList<>();
         Map<String, String> finalStatements = new LinkedHashMap<>();
+        List<String> revealedPlayerIds = new ArrayList<>();
         String afterFinalStatementsPhase = "discussion";
         List<ChatMessage> mafiaChat = new ArrayList<>();
         List<ChatMessage> playerChat = new ArrayList<>();
@@ -1680,6 +1784,7 @@ public class Main {
             morningDeaths = new ArrayList<>();
             finalStatementPlayerIds = new ArrayList<>();
             finalStatements = new LinkedHashMap<>();
+            revealedPlayerIds = new ArrayList<>();
             afterFinalStatementsPhase = "discussion";
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
@@ -1706,6 +1811,7 @@ public class Main {
             morningDeaths = new ArrayList<>();
             finalStatementPlayerIds = new ArrayList<>();
             finalStatements = new LinkedHashMap<>();
+            revealedPlayerIds = new ArrayList<>();
             afterFinalStatementsPhase = "discussion";
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();

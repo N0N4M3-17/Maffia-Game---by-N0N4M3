@@ -800,16 +800,24 @@ code {
 
 .gm-master-badge {
   min-height: 34px;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
   border: 1px solid rgba(215, 182, 93, .58);
   border-radius: 2px;
+  background: transparent;
   color: var(--gold);
   text-transform: uppercase;
   font-size: 12px;
   font-weight: 900;
+}
+
+.gm-master-badge:hover,
+.gm-master-badge[aria-expanded="true"] {
+  background: rgba(215, 182, 93, .12);
+  box-shadow: 0 0 0 1px rgba(215, 182, 93, .16);
 }
 
 .gm-master-badge svg {
@@ -818,6 +826,36 @@ code {
   fill: none;
   stroke: currentColor;
   stroke-width: 3;
+}
+
+.gm-tools {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(215, 182, 93, .34);
+  border-radius: 4px;
+  background: #10111e;
+  animation: panelIn .2s ease both;
+}
+
+.gm-tools h4 {
+  margin: 0;
+  color: var(--gold);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.gm-tools label {
+  gap: 5px;
+  font-size: 11px;
+}
+
+.gm-tools select,
+.gm-tools button {
+  min-height: 30px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 
 .gm-phase-box {
@@ -1903,6 +1941,12 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .game-over-scene {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
   .gm-command-rail,
   .gm-event-log {
     border: 0;
@@ -2049,6 +2093,105 @@ code {
   }
 }
 
+.game-over-scene {
+  min-height: clamp(230px, 30vh, 360px);
+  display: grid;
+  grid-template-columns: minmax(130px, 210px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(20px, 4vw, 64px);
+  padding: clamp(22px, 4vw, 54px);
+  border: 1px solid rgba(215, 182, 93, .34);
+  background:
+    radial-gradient(circle at 24% 50%, rgba(215, 182, 93, .16), transparent 28%),
+    linear-gradient(135deg, rgba(166, 51, 51, .18), rgba(7, 8, 17, .96) 45%, rgba(89, 194, 137, .10)),
+    #080912;
+  overflow: hidden;
+}
+
+.game-over-scene.won {
+  border-color: rgba(89, 194, 137, .46);
+}
+
+.game-over-scene.lost {
+  border-color: rgba(207, 74, 74, .42);
+}
+
+.victor-card {
+  width: min(190px, 36vw);
+  aspect-ratio: 2 / 3;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gold);
+  background: linear-gradient(160deg, #151923, #242a36);
+  color: var(--gold);
+  text-align: center;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .34);
+  animation: victorFlyIn .8s cubic-bezier(.18, .82, .22, 1) both;
+}
+
+.victor-card.mafia { color: var(--red-2); border-color: var(--red-2); background: #330606; }
+.victor-card.town { color: #d9d3c2; border-color: #d9d3c2; }
+.victor-card.vigilante { color: var(--gold); border-color: var(--gold); }
+.victor-card.jester { color: #ff6b74; border-color: #ff6b74; background: linear-gradient(135deg, #2a0810 0 48%, #10213a 48% 100%); }
+
+.victor-card span svg {
+  width: 58px;
+  height: 58px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+}
+
+.victor-card strong {
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.victor-card em {
+  max-width: 90%;
+  color: currentColor;
+  font-size: 12px;
+  font-style: normal;
+  opacity: .8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outcome-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.outcome-copy h3 {
+  font-size: clamp(40px, 7vw, 82px);
+  line-height: .9;
+}
+
+.outcome-copy p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: clamp(16px, 2vw, 24px);
+}
+
+@keyframes victorFlyIn {
+  from {
+    opacity: 0;
+    transform: translateX(-42vw) translateY(24px) rotate(-18deg) scale(.78);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(10px) translateY(-8px) rotate(4deg) scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0) rotate(0) scale(1);
+  }
+}
+
 @media (orientation: landscape) and (min-width: 900px) {
   .workspace {
     max-width: none;
@@ -2096,7 +2239,7 @@ code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .deal-card, .role-card {
+  .deal-card, .role-card, .victor-card {
     animation: none;
   }
 
