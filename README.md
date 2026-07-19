@@ -14,6 +14,8 @@ Maffia Game ported to hybrid mode (Browser/Phone capacity).
 mvn exec:java
 ```
 
+Alternatively, if Node.js is already installed, `npm start` delegates to the same Maven Java host.
+
 Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 
 ## Current implementation status
