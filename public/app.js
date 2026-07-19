@@ -151,8 +151,23 @@ async function logout() {
 }
 
 async function afterLoginRefresh() {
+  await recoverPlayerSeat();
   await Promise.all([refreshRooms(), refreshServerInfo()]);
   startPolling();
+}
+
+async function recoverPlayerSeat() {
+  try {
+    const seat = await api('/api/my-player');
+    if (seat.joined && seat.playerId) {
+      state.playerId = seat.playerId;
+      localStorage.setItem('playerId', seat.playerId);
+      return true;
+    }
+  } catch {
+    // Recovery is opportunistic; normal join still works if this fails.
+  }
+  return false;
 }
 
 async function refreshServerInfo() {
@@ -415,8 +430,13 @@ async function refreshPlayer() {
     renderPlayerList(ps.players || []);
     renderChats(ps);
   } catch (err) {
-    state.playerId = null;
     localStorage.removeItem('playerId');
+    state.playerId = null;
+    if (await recoverPlayerSeat()) {
+      state.lastActionRenderKey = '';
+      await refreshPlayer();
+      return;
+    }
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
   }
