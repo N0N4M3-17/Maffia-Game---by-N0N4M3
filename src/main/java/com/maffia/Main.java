@@ -519,6 +519,42 @@ public class Main {
                 return;
             }
 
+            if ("POST".equals(method) && "/api/gm/void".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can void the game."));
+                    return;
+                }
+                if ("lobby".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "No active game to void."));
+                    return;
+                }
+                STATE.phase = "game_over";
+                STATE.winner = "Voided";
+                STATE.phaseEndsAt = 0L;
+                STATE.scoresRecorded = true;
+                pushPlayerChat("SYSTEM", "The GM voided this game. No scores were recorded.");
+                writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase, "winner", STATE.winner));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/gm/return-lobby".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can return to the lobby."));
+                    return;
+                }
+                if (!"game_over".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "Return to lobby is only available after game over."));
+                    return;
+                }
+                STATE.returnToLobbyKeepingSeats();
+                writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
+                return;
+            }
+
             if ("POST".equals(method) && "/api/gm/reset".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
@@ -562,7 +598,8 @@ public class Main {
                 actor.lastSheriffTargetName = t.name;
                 actor.lastSheriffResult = "Mafia".equals(t.role) ? "Mafia" : "Town";
                 STATE.lastSheriffResult = actor.name + " -> " + t.name + " is " + actor.lastSheriffResult;
-                writeJson(ex, 200, Map.of("ok", true));
+                nextPhaseInternal();
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
                 return;
             }
 
@@ -574,7 +611,8 @@ public class Main {
                 if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 if (target.equals(actor.lastDoctorTarget)) { writeJson(ex, 400, Map.of("error", "Doctor cannot protect same target consecutively.")); return; }
                 STATE.doctorTarget = target;
-                writeJson(ex, 200, Map.of("ok", true));
+                nextPhaseInternal();
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
                 return;
             }
 
@@ -726,22 +764,7 @@ public class Main {
         if ("game_over".equals(STATE.phase)) return;
         switch (STATE.phase) {
             case "night0" -> beginNight();
-            case "night_mafia" -> {
-                if (aliveRoleExists("Sheriff")) setPhase("night_sheriff");
-                else if (aliveRoleExists("Doctor")) setPhase("night_doctor");
-                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_sheriff" -> {
-                if (aliveRoleExists("Doctor")) setPhase("night_doctor");
-                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_doctor" -> {
-                if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_vigilante" -> endNightAndEnterMorning();
+            case "night_mafia", "night_sheriff", "night_doctor", "night_vigilante" -> advanceNightRolePhase();
             case "morning" -> {
                 STATE.afterFinalStatementsPhase = "discussion";
                 if (!STATE.finalStatementPlayerIds.isEmpty()) setPhase("final_statements");
@@ -762,6 +785,17 @@ public class Main {
                 }
             }
         }
+    }
+
+    private static void advanceNightRolePhase() {
+        String next = GameRules.nextNightRolePhase(
+                STATE.phase,
+                aliveRoleExists("Sheriff"),
+                aliveRoleExists("Doctor"),
+                aliveRoleExists("Vigilante")
+        );
+        if (next == null) endNightAndEnterMorning();
+        else setPhase(next);
     }
 
     private static void endNightAndEnterMorning() {
@@ -1474,6 +1508,35 @@ public class Main {
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
             publicDayVoteTally = true;
+        }
+
+        void returnToLobbyKeepingSeats() {
+            phase = "lobby";
+            nightStep = "-";
+            round = 0;
+            winner = null;
+            lastSheriffResult = null;
+            phaseEndsAt = 0L;
+            scoresRecorded = false;
+            mafiaVotes = new HashMap<>();
+            sheriffTarget = null;
+            doctorTarget = null;
+            vigilanteTarget = null;
+            dayVotes = new HashMap<>();
+            morningDeaths = new ArrayList<>();
+            finalStatementPlayerIds = new ArrayList<>();
+            finalStatements = new LinkedHashMap<>();
+            afterFinalStatementsPhase = "discussion";
+            mafiaChat = new ArrayList<>();
+            playerChat = new ArrayList<>();
+            for (Player p : players) {
+                p.role = null;
+                p.alive = true;
+                p.lastDoctorTarget = null;
+                p.lastSheriffResult = null;
+                p.lastSheriffTargetName = null;
+                p.vigilanteShotsRemaining = 0;
+            }
         }
     }
 

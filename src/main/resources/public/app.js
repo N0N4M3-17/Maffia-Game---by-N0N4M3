@@ -11,7 +11,9 @@ const state = {
   roleDirty: false,
   settingsDirty: false,
   pendingTargetByPhase: {},
-  roleReveal: { revealed: false, acknowledged: false, lastPhase: '' },
+  roleReveal: { revealed: false, acknowledged: false, lastPhase: '', lastRound: -1, lastRole: '' },
+  dealRenderKey: '',
+  lastPlayerState: null,
   lastActionRenderKey: '',
 };
 
@@ -330,6 +332,21 @@ async function gmNextPhase() {
   await refreshAll();
 }
 
+async function gmVoidGame() {
+  await api('/api/gm/void', { method: 'POST', body: '{}' });
+  await refreshAll();
+  setMessage('Game voided. No scores were recorded.');
+}
+
+async function gmReturnLobby() {
+  await api('/api/gm/return-lobby', { method: 'POST', body: '{}' });
+  state.roleReveal = { revealed: false, acknowledged: false, lastPhase: '', lastRound: -1, lastRole: '' };
+  state.dealRenderKey = '';
+  state.lastActionRenderKey = '';
+  await refreshAll();
+  setMessage('Returned to lobby with seated players.');
+}
+
 async function resetLobby() {
   await api('/api/gm/reset', { method: 'POST', body: '{}' });
   state.playerId = null;
@@ -343,12 +360,16 @@ async function refreshGm() {
   const hostTab = document.querySelector('[data-tab="host"]');
   if (hostTab) hostTab.classList.toggle('hidden', !gm.canManage);
   if (!gm.canManage && document.querySelector('#tab-host.active')) showTab('play');
-  const setupVisible = gm.phase === 'lobby' || gm.phase === 'game_over';
+  const setupVisible = gm.phase === 'lobby';
   $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
   $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
   $('timer-pill').textContent = fmtSec(gm.phaseRemainingSec || 0);
   $('phase-heading').textContent = phaseTitle(gm.phase, gm.round);
+  $('void-game-btn').disabled = gm.phase === 'lobby';
+  $('start-night-btn').disabled = gm.phase === 'game_over';
+  $('next-phase-btn').disabled = gm.phase === 'game_over';
+  $('return-lobby-btn').classList.toggle('hidden', gm.phase !== 'game_over');
   $('room-kicker').textContent = gm.room?.name || 'Table One';
   $('roster-count').textContent = String(gm.playerCount);
   if (gm.phase === 'lobby' && !state.roleDirty) {
@@ -446,20 +467,21 @@ function gmGuidanceMarkup(gm) {
     final_statements: ['Final statements', `${gm.finalStatementPending || 0} final statement(s) still pending.`],
     discussion: ['Table discussion', 'Let alive players discuss. Move to voting when the room is ready or when the timer expires.'],
     day_vote: ['Day voting', `${gm.pendingDayVotes || 0} alive player vote(s) still pending. Strict majority is required for elimination.`],
-    game_over: ['Game over', `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
+    game_over: ['Game over', gm.winner === 'Voided' ? 'The GM voided this game. No scores were recorded. Reset to return to lobby setup.' : `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
   };
   const [title, body] = guides[gm.phase] || ['Current phase', gm.phase || 'Waiting for game state.'];
   return `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
 }
 
 function phaseTitle(phase, round) {
+  const nightLabel = round ? `Night ${round}` : 'Night';
   const titles = {
     lobby: 'Lobby',
     night0: 'Night 0 role reveal',
-    night_mafia: `Night ${round}: Mafia`,
-    night_sheriff: `Night ${round}: Sheriff`,
-    night_doctor: `Night ${round}: Doctor`,
-    night_vigilante: `Night ${round}: Vigilante`,
+    night_mafia: `${nightLabel}: Mafia`,
+    night_sheriff: `${nightLabel}: Sheriff`,
+    night_doctor: `${nightLabel}: Doctor`,
+    night_vigilante: `${nightLabel}: Vigilante`,
     morning: 'Morning report',
     final_statements: 'Final statements',
     discussion: 'Discussion',
@@ -490,6 +512,8 @@ function renderRoster(players) {
 
 async function refreshPlayer() {
   if (!state.playerId) {
+    state.lastPlayerState = null;
+    renderMobileActionTray(null);
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
     $('player-phase-guide').innerHTML = '<strong>Take a seat</strong><span>Join the current room to enter the table.</span>';
@@ -498,9 +522,11 @@ async function refreshPlayer() {
   }
   try {
     const ps = await api(`/api/player-state/${state.playerId}`);
+    state.lastPlayerState = ps;
     $('join-state').classList.add('hidden');
     $('role-state').classList.remove('hidden');
     renderRole(ps);
+    renderMobileActionTray(ps);
     $('player-phase-guide').innerHTML = playerGuidanceMarkup(ps);
     renderPlayerAction(ps);
     renderPlayerList(ps.players || []);
@@ -508,6 +534,7 @@ async function refreshPlayer() {
   } catch (err) {
     localStorage.removeItem('playerId');
     state.playerId = null;
+    state.lastPlayerState = null;
     if (await recoverPlayerSeat()) {
       state.lastActionRenderKey = '';
       await refreshPlayer();
@@ -515,11 +542,47 @@ async function refreshPlayer() {
     }
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
+    renderMobileActionTray(null);
     $('player-phase-guide').innerHTML = '<strong>Seat lost</strong><span>Join the current room again to reconnect.</span>';
   }
 }
 
+function actionForPhase(ps) {
+  if (!ps) return '';
+  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return 'submit-mafia';
+  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return 'submit-sheriff';
+  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return 'submit-doctor';
+  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return 'submit-vigilante';
+  if (ps.phase === 'day_vote') return 'submit-day';
+  return '';
+}
+
+function currentTargetLabel(ps) {
+  const action = actionForPhase(ps);
+  if (!action) return ps?.phase === 'night0' ? 'Role card' : 'None';
+  const storeKey = actionStoreKey(ps, action);
+  const selected = Object.prototype.hasOwnProperty.call(state.pendingTargetByPhase, storeKey)
+    ? state.pendingTargetByPhase[storeKey]
+    : submittedTarget(ps, action);
+  if ((action === 'submit-day' || action === 'submit-vigilante') && selected === '') {
+    return action === 'submit-day' ? 'Abstain' : 'Skip shot';
+  }
+  return (ps.players || []).find((player) => player.id === selected)?.name || 'None';
+}
+
+function renderMobileActionTray(ps) {
+  const tray = $('mobile-action-tray');
+  if (!tray) return;
+  tray.classList.toggle('hidden', !ps);
+  if (!ps) return;
+  $('tray-phase').textContent = phaseTitle(ps.phase, ps.round);
+  $('tray-timer').textContent = fmtSec(ps.phaseRemainingSec || 0);
+  $('tray-alive').textContent = `${ps.aliveCount || 0} alive`;
+  $('tray-target').textContent = currentTargetLabel(ps);
+}
+
 function playerGuidanceMarkup(ps) {
+  if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<strong>Game voided</strong><span>The GM voided this game. No scores were recorded.</span>';
   if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(ps.winner || 'unknown')}. Your score has been recorded.</span>`;
   if (!ps.alive && ps.phase !== 'final_statements') return '<strong>Observe only</strong><span>You are out of the round. Watch the table and keep private information private.</span>';
   if (ps.phase === 'night0') return '<strong>Role reveal</strong><span>Reveal privately, confirm when ready, then wait for the GM.</span>';
@@ -562,30 +625,37 @@ function playerGuidanceMarkup(ps) {
 
 function renderRole(ps) {
   state.currentPlayerPhase = ps.phase;
-  renderDealStage(ps);
-  $('role-symbol').innerHTML = roleIcon(ps.role || 'Hidden');
-  $('role-name').textContent = (ps.role || 'Waiting').toUpperCase();
+  const role = ps.role || '';
+  const roleClass = String(role || 'town').toLowerCase();
   const team = ps.role === 'Mafia' && ps.mafiaTeam?.length
     ? ` Team: ${ps.mafiaTeam.map((mate) => mate.name).join(', ')}.`
     : '';
-  $('role-desc').textContent = `${ps.roleDescription || 'Role appears after the host launches the game.'}${team}`;
-  $('vigi-ammo').textContent = ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
-  if (state.roleReveal.lastPhase !== ps.phase) {
-    state.roleReveal = { revealed: ps.phase !== 'night0' ? false : state.roleReveal.revealed, acknowledged: false, lastPhase: ps.phase };
+  if (state.roleReveal.lastPhase !== ps.phase || state.roleReveal.lastRound !== ps.round || state.roleReveal.lastRole !== role) {
+    state.roleReveal = { revealed: false, acknowledged: false, lastPhase: ps.phase, lastRound: ps.round, lastRole: role };
   }
-  const cardRevealed = ps.phase === 'night0' && (state.roleReveal.revealed || state.roleReveal.acknowledged);
-  const cardMasked = ps.phase === 'night0' && !cardRevealed;
-  $('role-card').className = `role-card ${cardRevealed ? 'revealed ' + String(ps.role || '').toLowerCase() : 'neutral'} ${cardMasked ? 'masked' : ''}`;
+  renderDealStage(ps);
+  const canPeek = !!role && ps.phase !== 'lobby';
+  const cardRevealed = canPeek && (state.roleReveal.revealed || state.roleReveal.acknowledged);
+  const cardMasked = canPeek && !cardRevealed;
+  $('role-symbol').innerHTML = roleIcon(cardRevealed ? role : 'Hidden');
+  $('role-name').textContent = cardRevealed ? role.toUpperCase() : (canPeek ? 'HIDDEN' : 'WAITING');
+  $('role-desc').textContent = cardRevealed
+    ? `${ps.roleDescription || 'Role appears after the host launches the game.'}${team}`
+    : (canPeek ? 'Tap to peek. Tap again to hide before handing the screen around.' : 'Role appears after the host launches the game.');
+  $('vigi-ammo').textContent = cardRevealed && ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
+  $('role-card').className = `role-card ${cardRevealed ? 'revealed ' + roleClass : 'neutral'} ${cardMasked ? 'masked' : ''}`;
+  $('role-card').setAttribute('aria-pressed', cardRevealed ? 'true' : 'false');
+  $('role-card').setAttribute('aria-label', cardRevealed ? 'Hide role card' : 'Reveal role card');
+  const playGrid = document.querySelector('#tab-play .play-grid');
+  if (playGrid) {
+    playGrid.classList.remove('role-peeking', 'role-mafia', 'role-sheriff', 'role-doctor', 'role-vigilante', 'role-town');
+    if (cardRevealed) playGrid.classList.add('role-peeking', `role-${roleClass}`);
+  }
   $('night0-controls').classList.toggle('hidden', ps.phase !== 'night0');
-  if (cardMasked) {
-    $('role-symbol').innerHTML = roleIcon('Hidden');
-    $('role-name').textContent = 'HIDDEN';
-    $('role-desc').textContent = 'Tap reveal when nobody else can see your screen.';
-  }
 }
 
 function toggleRolePeek() {
-  if (state.currentPlayerPhase !== 'night0') return;
+  if (!$('role-state') || $('role-state').classList.contains('hidden')) return;
   state.roleReveal.revealed = !state.roleReveal.revealed;
   state.roleReveal.acknowledged = false;
   state.lastActionRenderKey = '';
@@ -605,22 +675,25 @@ function renderDealStage(ps) {
   stage.classList.toggle('hidden', !showDeal);
   if (!showDeal) {
     stage.innerHTML = '';
+    state.dealRenderKey = '';
     return;
   }
   const players = ps.players || [];
   const selfIndex = Math.max(0, players.findIndex((p) => p.id === ps.id));
   const revealed = state.roleReveal.revealed || state.roleReveal.acknowledged;
-  stage.innerHTML = `
+  const dealKey = `${ps.round}|${ps.id}|${ps.role}|${players.map((player) => player.id).join(',')}`;
+  if (state.dealRenderKey !== dealKey || !stage.innerHTML) {
+    state.dealRenderKey = dealKey;
+    stage.innerHTML = `
     <div class="deal-header">
-      <strong>${revealed ? `You are the ${escapeHtml(ps.role || 'Unknown')}` : 'Cards are being dealt'}</strong>
-      <span>${revealed ? 'Keep your identity hidden until the table earns it.' : `${players.length} role card(s) for ${players.length} seated player(s).`}</span>
+      <strong></strong>
+      <span></span>
     </div>
     <div class="deal-table" style="--card-count:${Math.max(players.length, 1)}">
       ${players.map((player, index) => {
         const isSelf = index === selfIndex;
-        const faceUp = isSelf && revealed;
         return `
-          <article class="deal-card ${isSelf ? 'mine' : ''} ${faceUp ? 'revealed' : ''}" style="--deal-index:${index}; --deal-mid:${selfIndex}">
+          <article class="deal-card ${isSelf ? 'mine' : ''}" style="--deal-index:${index}; --deal-mid:${selfIndex}">
             <div class="deal-card-inner">
               <div class="deal-card-back"><span></span></div>
               <div class="deal-card-front ${String(ps.role || '').toLowerCase()}">
@@ -634,6 +707,13 @@ function renderDealStage(ps) {
       }).join('')}
     </div>
   `;
+  }
+  stage.classList.toggle('role-revealed', revealed);
+  stage.querySelector('.deal-header strong').textContent = revealed ? `You are the ${ps.role || 'Unknown'}` : 'Cards are being dealt';
+  stage.querySelector('.deal-header span').textContent = revealed ? 'This copied card becomes your private role card below.' : `${players.length} role card(s) for ${players.length} seated player(s).`;
+  stage.querySelectorAll('.deal-card').forEach((card, index) => {
+    card.classList.toggle('revealed', index === selfIndex && revealed);
+  });
 }
 
 function aliveTargets(ps, allowSelf = false) {
@@ -661,7 +741,7 @@ function roleIcon(kind) {
     return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m20 6 4 6 7 1-2 7 3 6-7 2-5 5-5-5-7-2 3-6-2-7 7-1 4-6Z"/><path d="M16 20h8"/><path d="M20 16v8"/></svg>';
   }
   if (kind === 'Doctor') {
-    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m27 7 6 6-17 17-8 2 2-8 17-17Z"/><path d="m23 11 6 6"/><path d="M10 24l6 6"/></svg>';
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m27 5 8 8"/><path d="m22 10 8 8-15 15-8 2 2-8 15-15Z"/><path d="m11 25 4 4"/><path d="M5 35l7-7"/></svg>';
   }
   if (kind === 'Vigilante') {
     return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 18h17l5 4v4H17l-2 6h-5l2-6H8v-8Z"/><path d="M25 18v-4h6"/><path d="M13 26h6"/></svg>';
@@ -698,6 +778,11 @@ function targetTile(player, selected) {
   `;
 }
 
+function selectedTargetName(ps, selected, options) {
+  if (options.includeAbstain && selected === '') return options.skipLabel || 'Skip';
+  return (ps.players || []).find((player) => player.id === selected)?.name || '';
+}
+
 function actionPicker(action, ps, options) {
   const storeKey = actionStoreKey(ps, action);
   const existing = Object.prototype.hasOwnProperty.call(state.pendingTargetByPhase, storeKey)
@@ -705,6 +790,7 @@ function actionPicker(action, ps, options) {
     : submittedTarget(ps, action);
   const selected = existing ?? '';
   const targets = aliveTargets(ps, !!options.allowSelf);
+  const selectedName = selectedTargetName(ps, selected, options);
   const tiles = targets.map((player) => targetTile(player, selected === player.id)).join('');
   const abstainTile = options.includeAbstain
     ? `<button class="target-tile skip ${selected === '' ? 'selected' : ''}" type="button" data-target-id="" aria-pressed="${selected === '' ? 'true' : 'false'}"><span class="target-frame"><span class="skip-mark">--</span><span class="target-check">${roleIcon('check')}</span></span><span>${escapeHtml(options.skipLabel || 'Skip')}</span></button>`
@@ -715,6 +801,7 @@ function actionPicker(action, ps, options) {
     <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}">
       <input id="act-target" type="hidden" value="${escapeHtml(selected)}">
       <div class="target-grid">${abstainTile}${tiles || '<p class="muted">No alive targets available.</p>'}</div>
+      <p id="selected-target-summary" class="selected-target-summary ${selectedName ? '' : 'hidden'}">Selected: <strong>${escapeHtml(selectedName)}</strong></p>
       <button class="primary-button" data-action="${action}" ${doctorRepeat || needsTarget ? 'disabled' : ''}>${escapeHtml(options.label)}</button>
       <p id="action-warning" class="action-warning ${doctorRepeat ? '' : 'hidden'}">Doctors cannot protect the same player on consecutive nights. Choose another alive player.</p>
       <p class="muted">${escapeHtml(options.hint)}</p>
@@ -739,6 +826,7 @@ function actionMarkup(ps) {
   if (ps.phase === 'day_vote') return actionPicker('submit-day', ps, { label: 'Submit vote', hint: `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`, includeAbstain: true, skipLabel: 'Abstain' });
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
+  if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<p class="winner-text">Game voided by GM</p><p class="muted">No scores were recorded. Wait for the lobby reset.</p>';
   if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;
   return '<p class="muted">No action right now.</p>';
 }
@@ -747,10 +835,17 @@ function refreshActionChoice(panel) {
   const selected = panel.querySelector('#act-target')?.value || '';
   const button = panel.querySelector('[data-action]');
   const warning = panel.querySelector('#action-warning');
+  const summary = panel.querySelector('#selected-target-summary');
+  const selectedTile = panel.querySelector('.target-tile.selected');
   const doctorRepeat = panel.dataset.targetAction === 'submit-doctor' && selected && selected === panel.dataset.lastDoctorTarget;
   const needsTarget = panel.dataset.requiresTarget === 'true' && !selected;
   if (button) button.disabled = doctorRepeat || needsTarget;
   if (warning) warning.classList.toggle('hidden', !doctorRepeat);
+  if (summary) {
+    const label = selectedTile?.querySelector('span:last-child')?.textContent || '';
+    summary.classList.toggle('hidden', !label);
+    summary.innerHTML = label ? `Selected: <strong>${escapeHtml(label)}</strong>` : '';
+  }
   if (doctorRepeat) setMessage('Doctor rule: you cannot protect the same target on consecutive nights.', true);
 }
 
@@ -766,6 +861,7 @@ function bindActionTargets(panel) {
       candidate.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     refreshActionChoice(panel);
+    if (state.lastPlayerState) renderMobileActionTray(state.lastPlayerState);
   }));
   refreshActionChoice(panel);
 }
@@ -802,6 +898,7 @@ function chatLines(items) {
 
 async function submitAction(action) {
   const targetId = $('act-target')?.value || null;
+  const storeKey = document.querySelector('.target-action')?.dataset.storeKey || '';
   const paths = {
     'submit-mafia': '/api/player/mafia-vote',
     'submit-sheriff': '/api/player/sheriff-investigate',
@@ -821,7 +918,13 @@ async function submitAction(action) {
     return;
   }
   const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
-  if (result.locked) setMessage(`Vote locked. Advanced to ${phaseTitle(result.phase, '')}.`);
+  if (result.locked) {
+    if (storeKey) delete state.pendingTargetByPhase[storeKey];
+    setMessage(`Action committed. Advanced to ${phaseTitle(result.phase, '')}.`);
+    state.lastActionRenderKey = '';
+    await refreshAll();
+    return;
+  }
   else if (action === 'submit-sheriff') setMessage('Investigation complete.');
   else if (action === 'submit-doctor') setMessage('Protection submitted.');
   else if (action === 'submit-vigilante') setMessage(targetId ? 'Shot submitted.' : 'Shot skipped.');
@@ -960,6 +1063,8 @@ function bindEvents() {
   $('save-timers-btn').addEventListener('click', () => saveTimerSettings().catch((err) => setMessage(err.message, true)));
   $('start-night-btn').addEventListener('click', () => gmStartNight().catch((err) => setMessage(err.message, true)));
   $('next-phase-btn').addEventListener('click', () => gmNextPhase().catch((err) => setMessage(err.message, true)));
+  $('void-game-btn').addEventListener('click', () => gmVoidGame().catch((err) => setMessage(err.message, true)));
+  $('return-lobby-btn').addEventListener('click', () => gmReturnLobby().catch((err) => setMessage(err.message, true)));
   $('reset-lobby-btn').addEventListener('click', () => resetLobby().catch((err) => setMessage(err.message, true)));
   $('reveal-role-btn').addEventListener('click', () => { state.roleReveal.revealed = true; state.lastActionRenderKey = ''; refreshPlayer(); });
   $('hide-role-btn').addEventListener('click', () => { state.roleReveal.revealed = false; refreshPlayer(); });
