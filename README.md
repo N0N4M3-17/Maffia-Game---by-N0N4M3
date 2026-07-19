@@ -7,6 +7,7 @@ Maffia Game ported to hybrid mode (Browser/Phone capacity).
 ### Requirements
 - Java 17+
 - Maven 3.9+
+- Node.js 22+ for local static checks and the optional `npm start` launcher.
 
 ### Start server
 
@@ -21,6 +22,7 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 ## Current implementation status
 
 - Java backend host for LAN browser play.
+- GitHub Actions CI runs static checks and Maven tests on pull requests.
 - Persistent local account registry with email/username login.
 - Seeded local admin account: `gabi17hun@gmail.com` / `n0n4m3-admin` with password `admin123`.
 - Browser admin screen for creating, editing, and deleting the local player base, scores, usernames, emails, and passwords.

@@ -35,6 +35,7 @@ const html = read('src/main/resources/public/index.html');
 const app = read('src/main/resources/public/app.js');
 const readme = read('README.md');
 const gmRunbook = read('docs/GM_RUNBOOK.md');
+const ciWorkflow = read('.github/workflows/ci.yml');
 const packageJson = JSON.parse(read('package.json'));
 const nodeEntry = read('server.js');
 const nodeLauncher = read('scripts/start-java-host.js');
@@ -43,6 +44,8 @@ assert(nodeEntry.includes("require('./scripts/start-java-host')"), 'server.js mu
 assert(nodeLauncher.includes("['exec:java']"), 'Node launcher must run Maven exec:java');
 assert(readme.includes('docs/GM_RUNBOOK.md'), 'README must link the GM runbook');
 assert(gmRunbook.includes('First Admin Login') && gmRunbook.includes('Secure Public Hosting'), 'GM runbook must cover admin login and public hosting');
+assert(ciWorkflow.includes('actions/setup-java@v4') && ciWorkflow.includes('mvn -q test'), 'CI must run Maven tests with Java');
+assert(ciWorkflow.includes('npm test'), 'CI must run static checks');
 assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKDF2-HMAC-SHA256');
 assert(backend.includes('"POST".equals(method) && "/api/admin/users".equals(path)'), 'admin must be able to create user accounts');
 assert(backend.includes('adminCount()') && backend.includes('At least one admin account must remain.'), 'admin management must prevent last-admin lockout');
