@@ -399,7 +399,10 @@ async function refreshPlayer() {
 
 function renderRole(ps) {
   $('role-name').textContent = (ps.role || 'Waiting').toUpperCase();
-  $('role-desc').textContent = ps.roleDescription || 'Role appears after the host launches the game.';
+  const team = ps.role === 'Mafia' && ps.mafiaTeam?.length
+    ? ` Team: ${ps.mafiaTeam.map((mate) => mate.name).join(', ')}.`
+    : '';
+  $('role-desc').textContent = `${ps.roleDescription || 'Role appears after the host launches the game.'}${team}`;
   $('vigi-ammo').textContent = ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
   if (state.roleReveal.lastPhase !== ps.phase) {
     state.roleReveal = { revealed: ps.phase !== 'night0', acknowledged: false, lastPhase: ps.phase };
@@ -426,7 +429,7 @@ function actionMarkup(ps) {
   if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionSelect('submit-sheriff', targetOptions(ps), 'Investigate', ps.sheriffResult ? `Result: ${escapeHtml(ps.sheriffResult)}` : 'No result yet.');
   if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionSelect('submit-doctor', targetOptions(ps, false, true), 'Protect', 'You may protect yourself, but not repeat last target.');
   if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return actionSelect('submit-vigilante', targetOptions(ps, true), 'Shoot / skip', 'Leave blank to skip.');
-  if (ps.phase === 'day_vote') return actionSelect('submit-day', targetOptions(ps, true), 'Submit vote', `${ps.pendingDayVotes || 0} players pending.`);
+  if (ps.phase === 'day_vote') return actionSelect('submit-day', targetOptions(ps, true), 'Submit vote', `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`);
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
   if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;

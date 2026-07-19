@@ -666,7 +666,7 @@ public class Main {
     }
 
     private static void resolveDayVote() {
-        String target = pluralityTarget(STATE.dayVotes);
+        String target = majorityTarget(STATE.dayVotes, aliveCount());
         if (target != null) {
             Player p = findPlayer(target);
             if (p != null && p.alive) {
@@ -851,6 +851,18 @@ public class Main {
         payload.put("room", roomPayload(DB.defaultRoom()));
         payload.put("account", accountPayload(account));
         payload.put("mafiaChat", "Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase) ? chatPayload(STATE.mafiaChat) : List.of());
+        payload.put("mafiaTeam", "Mafia".equals(p.role)
+                ? STATE.players.stream()
+                        .filter(other -> "Mafia".equals(other.role))
+                        .map(other -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("id", other.id);
+                            row.put("name", other.name);
+                            row.put("alive", other.alive);
+                            return row;
+                        })
+                        .toList()
+                : List.of());
         payload.put("playerChat", chatPayload(STATE.playerChat));
         return payload;
     }
