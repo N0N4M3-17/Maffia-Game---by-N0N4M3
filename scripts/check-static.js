@@ -75,6 +75,7 @@ assert(backend.includes('startPhaseTicker') && backend.includes('scheduleAtFixed
 assert(backend.includes('lastDoctorTarget') && backend.includes('sheriffResultTargetName'), 'player payload must include action guidance context');
 assert(backend.includes('sheriffTargetCurrent') && backend.includes('doctorProtectCurrent') && backend.includes('vigilanteTargetCurrent'), 'player payload must preserve submitted action choices');
 assert(backend.includes('ACTION_RESULT_HOLD_MS') && backend.includes('holdActionResult') && backend.includes('actionNoticeTitle'), 'Sheriff and Doctor submits must hold the phase briefly with visible action notices');
+assert(backend.includes('"/api/gm/players/"') && backend.includes('Seats can only be removed before the game starts'), 'GM must be able to remove lobby player seats before launch');
 assert(backend.includes('!Objects.equals(previous, stored)') && backend.includes('!target.equals(previous)'), 'unchanged repeated votes must not duplicate system messages');
 assert(backend.includes('boolean manager = canManageGame(account)') && backend.includes('manager ? chatPayload(STATE.mafiaChat) : List.of()'), 'GM state must hide private console data from non-managers');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
@@ -113,6 +114,7 @@ assert(app.includes('selected-target-summary') && app.includes('Action committed
 assert(app.includes('renderMobileActionTray') && app.includes('currentTargetLabel') && app.includes('phaseRemainingSec'), 'mobile action tray must render phase, timer, alive count, and selected target');
 assert(app.includes('role-mini-icon') && app.includes('Vigilante shots'), 'setup role controls must show role symbols and vigilante ammunition setup');
 assert(app.includes('state.settingsDirty = true') && app.includes("public-day-tally').addEventListener('change'"), 'timer controls must preserve edited values while polling');
+assert(app.includes('removeSeat') && app.includes('data-remove-seat') && app.includes('manager-seat'), 'host roster must support manager-only lobby seat removal');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
@@ -124,6 +126,7 @@ assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tra
 assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');
 assert(read('src/main/resources/public/styles.css').includes('.gm-action-notice'), 'GM action result notice must be styled as a feed element');
 assert(read('src/main/resources/public/styles.css').includes('.gm-command-shell') && read('src/main/resources/public/styles.css').includes('.gm-event-log') && read('src/main/resources/public/styles.css').includes('.gm-player-card'), 'GM command center scene must be styled with table stage and event log');
+assert(read('src/main/resources/public/styles.css').includes('.seat-remove') && read('src/main/resources/public/styles.css').includes('.manager-seat'), 'host roster seat management must be styled');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

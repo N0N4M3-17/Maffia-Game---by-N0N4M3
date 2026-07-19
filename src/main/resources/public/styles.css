@@ -678,6 +678,11 @@ code {
   border: 1px solid var(--line);
 }
 
+.player-row.manager-seat {
+  border-color: rgba(215, 182, 93, .48);
+  background: linear-gradient(90deg, rgba(215, 182, 93, .10), #151923 44%);
+}
+
 .player-row div:not(.avatar) {
   min-width: 0;
   flex: 1;
@@ -702,6 +707,13 @@ code {
   background: rgba(89, 194, 137, .12);
   border: 1px solid rgba(89, 194, 137, .35);
   color: var(--green);
+}
+
+.seat-remove {
+  min-height: 30px;
+  padding: 0 9px;
+  flex: 0 0 auto;
+  font-size: 12px;
 }
 
 .player-row.dead {

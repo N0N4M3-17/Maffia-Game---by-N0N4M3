@@ -568,6 +568,23 @@ public class Main {
                 return;
             }
 
+            if ("DELETE".equals(method) && path.startsWith("/api/gm/players/")) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can remove seats."));
+                    return;
+                }
+                if (!"lobby".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "Seats can only be removed before the game starts."));
+                    return;
+                }
+                String playerId = path.substring("/api/gm/players/".length());
+                boolean removed = STATE.players.removeIf(p -> p.id.equals(playerId));
+                writeJson(ex, removed ? 200 : 404, removed ? Map.of("ok", true) : Map.of("error", "Player seat not found."));
+                return;
+            }
+
             if ("POST".equals(method) && "/api/player/mafia-vote".equals(path)) {
                 JsonObject b = readBodyJson(ex);
                 Player actor = requireAlivePlayer(ex, b, "Mafia", "night_mafia");

@@ -396,7 +396,7 @@ async function refreshGm() {
     renderTimerControls();
   }
   updateValidation(gm.playerCount);
-  renderRoster(setupVisible ? (gm.players || []) : visiblePlayers);
+  renderRoster(setupVisible ? (gm.players || []) : visiblePlayers, gm.canManage && setupVisible);
   $('gm-phase-guide').innerHTML = gmGuidanceMarkup(gm);
   $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
   $('gm-action-status').querySelectorAll('[data-gm-button]').forEach((button) => {
@@ -625,14 +625,28 @@ function updateValidation(playerCount) {
   el.classList.toggle('ok', ok);
 }
 
-function renderRoster(players) {
+function renderRoster(players, canManageSeats = false) {
   $('player-roster').innerHTML = players.length ? players.map((p) => `
-    <article class="player-row ${p.alive ? '' : 'dead'}">
+    <article class="player-row ${p.alive ? '' : 'dead'} ${p.accountId === state.account?.id ? 'manager-seat' : ''}">
       ${avatar(p)}
       <div><strong>${escapeHtml(p.name)}</strong><span>${p.role || 'Waiting'}</span></div>
       <em>${p.alive ? 'Alive' : 'Dead'}</em>
+      ${canManageSeats ? `<button class="ghost-button seat-remove" data-remove-seat="${escapeHtml(p.id)}" aria-label="Remove ${escapeHtml(p.name)} from lobby">Remove</button>` : ''}
     </article>
   `).join('') : '<div class="empty-state">No players seated yet.</div>';
+  $('player-roster').querySelectorAll('[data-remove-seat]').forEach((btn) => {
+    btn.addEventListener('click', () => removeSeat(btn.dataset.removeSeat).catch((err) => setMessage(err.message, true)));
+  });
+}
+
+async function removeSeat(playerId) {
+  await api(`/api/gm/players/${encodeURIComponent(playerId)}`, { method: 'DELETE' });
+  if (state.playerId === playerId) {
+    state.playerId = null;
+    localStorage.removeItem('playerId');
+  }
+  await refreshAll();
+  setMessage('Seat removed from lobby.');
 }
 
 async function refreshPlayer() {

@@ -134,6 +134,7 @@ Treat the browser experience like five Unity-style scenes:
 - [x] Hold Sheriff and Doctor phases briefly after submit so the player and GM can see the committed result before auto-advance.
 - [x] Preserve GM timer edits while the polling loop runs, then apply saved timers to subsequent phases.
 - [x] Restyle active GM view as a command-center scene with a table-stage player grid, left GM controls, right event log, and GM-excluded display counts.
+- [x] Add manager-only lobby seat removal so the GM can keep themselves or mistaken players out of the seated player list before launch.
 - [ ] Improve small-screen usability, keyboard support, semantic labels, color contrast, and non-color status cues.
 - [x] Surface clear GM-facing phase guidance, action completion counts, outcomes, and winner summary.
 - [ ] Conduct structured multi-device playtests (minimum 3 players and a representative 6–10 player game) and record defects.
