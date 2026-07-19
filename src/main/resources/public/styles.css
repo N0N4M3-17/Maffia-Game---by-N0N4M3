@@ -285,6 +285,14 @@ code {
   max-width: none;
 }
 
+.host-grid.gm-command-view:has(#gm-setup-panel.hidden) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tab.scene-tab {
+  margin-inline: -22px;
+}
+
 .host-grid.gm-command-view .roster-panel {
   display: none;
 }
@@ -294,6 +302,7 @@ code {
   padding: 0;
   overflow: hidden;
   width: 100%;
+  border-radius: 0;
 }
 
 .host-grid.gm-command-view .gm-console-panel > .eyebrow,
@@ -305,6 +314,18 @@ code {
 .play-grid {
   grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.35fr) minmax(270px, .82fr);
   align-items: start;
+}
+
+.play-grid.dead-scene-view {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "observer";
+}
+
+.play-grid.dead-scene-view .role-panel,
+.play-grid.dead-scene-view .action-panel-shell,
+.play-grid.dead-scene-view .table-panel,
+.play-grid.dead-scene-view .chat-panel {
+  display: none;
 }
 
 .play-grid.role-peeking .role-panel,
@@ -750,7 +771,7 @@ code {
   min-height: calc(100vh - 230px);
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr) minmax(270px, 320px);
+  grid-template-columns: minmax(180px, 250px) minmax(420px, 1fr) minmax(250px, 340px);
   border: 1px solid rgba(111, 82, 255, .55);
   background: #080912;
   box-shadow: inset 0 1px 0 rgba(215, 182, 93, .10);
@@ -1090,9 +1111,14 @@ code {
 
 .dead-overview-panel {
   grid-column: 1 / -1;
+  grid-area: observer;
+  width: 100%;
+  min-height: calc(100vh - 130px);
   display: grid;
   gap: 12px;
   overflow: hidden;
+  padding: 0;
+  border-radius: 0;
 }
 
 .dead-overview-panel.hidden {
@@ -1107,6 +1133,7 @@ code {
 
 .dead-command-shell {
   min-height: clamp(430px, 58vh, 680px);
+  border-inline: 0;
 }
 
 .dead-command-shell .gm-master-badge {
@@ -1851,6 +1878,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .tab.scene-tab {
+    margin-inline: -12px;
+  }
+
   .host-grid.gm-command-view .gm-console-panel {
     min-height: 0;
   }
@@ -1917,6 +1948,14 @@ code {
 
   .play-grid.deal-scene .role-card {
     min-height: 154px;
+  }
+
+  .play-grid.dead-scene-view {
+    grid-template-areas: "observer";
+  }
+
+  .dead-overview-panel {
+    min-height: calc(100vh - 106px);
   }
 
   .action-panel-shell {
@@ -2016,6 +2055,11 @@ code {
 
   .play-grid.deal-scene {
     grid-template-areas: "role";
+  }
+
+  .play-grid.dead-scene-view {
+    grid-template-areas: "observer";
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .role-panel {

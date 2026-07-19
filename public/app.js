@@ -367,6 +367,7 @@ async function refreshGm() {
   const setupVisible = gm.phase === 'lobby';
   const hostGrid = document.querySelector('#tab-host .host-grid');
   if (hostGrid) hostGrid.classList.toggle('gm-command-view', !setupVisible);
+  document.querySelector('#tab-host')?.classList.toggle('scene-tab', !setupVisible);
   $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
   $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
@@ -666,6 +667,8 @@ function renderDeadOverview(ps) {
   const target = $('dead-overview');
   if (!panel || !target) return;
   const canObserve = !!ps && (!ps.alive || ps.phase === 'game_over') && (ps.observerPlayers || []).length;
+  document.querySelector('#tab-play')?.classList.toggle('scene-tab', canObserve);
+  document.querySelector('#tab-play .play-grid')?.classList.toggle('dead-scene-view', canObserve);
   panel.classList.toggle('hidden', !canObserve);
   if (!canObserve) {
     target.innerHTML = '';
