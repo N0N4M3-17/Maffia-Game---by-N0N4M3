@@ -1,11 +1,17 @@
 package com.maffia;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -14,22 +20,42 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 public class Main {
-    private static final Gson GSON = new Gson();
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Object LOCK = new Object();
     private static final GameState STATE = new GameState();
+    private static final LocalDatabase DB = new LocalDatabase(Path.of("data", "mafia-db.json"));
+    private static final SecureRandom RNG = new SecureRandom();
+    private static final List<String> PUBLIC_CHAT_PHASES = List.of("morning", "discussion", "day_vote", "game_over");
+    private static final String ADMIN_EMAIL = "gabi17hun@gmail.com";
+    private static final String ADMIN_USERNAME = "n0n4m3-admin";
+    private static final String ADMIN_PASSWORD = "admin123";
 
     public static void main(String[] args) throws IOException {
+        synchronized (LOCK) {
+            DB.load();
+            DB.seedAdmin();
+            DB.ensureDefaultRoom();
+            DB.save();
+        }
+
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "3000"));
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.createContext("/", Main::handleRequest);
@@ -43,6 +69,7 @@ public class Main {
 
     private static void handleRequest(HttpExchange ex) throws IOException {
         try {
+            addSecurityHeaders(ex);
             String path = ex.getRequestURI().getPath();
             if (path.startsWith("/api/")) handleApi(ex, path);
             else serveStatic(ex, path);
@@ -58,53 +85,274 @@ public class Main {
 
         if ("GET".equals(method) && "/api/server-info".equals(path)) {
             int port = ex.getLocalAddress().getPort();
-            writeJson(ex, 200, Map.of("port", port, "localhost", "http://localhost:" + port, "lanUrls", getLanUrls(port)));
+            writeJson(ex, 200, Map.of(
+                    "port", port,
+                    "localhost", "http://localhost:" + port,
+                    "lanUrls", getLanUrls(port),
+                    "publicUrl", System.getenv().getOrDefault("PUBLIC_URL", "")
+            ));
             return;
         }
 
         synchronized (LOCK) {
             tickPhaseTransitions();
 
+            if ("POST".equals(method) && "/api/auth/register".equals(path)) {
+                JsonObject b = readBodyJson(ex);
+                String email = text(b, "email").toLowerCase();
+                String username = text(b, "username");
+                String password = text(b, "password");
+                String error = validateRegistration(email, username, password);
+                if (error != null) {
+                    writeJson(ex, 400, Map.of("error", error));
+                    return;
+                }
+                if (DB.findAccountByLogin(email) != null || DB.findAccountByLogin(username) != null) {
+                    writeJson(ex, 409, Map.of("error", "Email or username is already registered."));
+                    return;
+                }
+                Account account = Account.create(email, username, username, password, false);
+                DB.data.accounts.add(account);
+                String session = DB.createSession(account.id);
+                DB.save();
+                setSessionCookie(ex, session);
+                writeJson(ex, 201, Map.of("account", accountPayload(account)));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/auth/login".equals(path)) {
+                JsonObject b = readBodyJson(ex);
+                Account account = DB.findAccountByLogin(text(b, "login"));
+                if (account == null || !verifyPassword(text(b, "password"), account.salt, account.passwordHash)) {
+                    writeJson(ex, 401, Map.of("error", "Invalid login or password."));
+                    return;
+                }
+                String session = DB.createSession(account.id);
+                DB.save();
+                setSessionCookie(ex, session);
+                writeJson(ex, 200, Map.of("account", accountPayload(account)));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/auth/logout".equals(path)) {
+                String token = sessionToken(ex);
+                if (token != null) DB.data.sessions.remove(token);
+                DB.save();
+                clearSessionCookie(ex);
+                writeJson(ex, 200, Map.of("ok", true));
+                return;
+            }
+
+            if ("GET".equals(method) && "/api/me".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                writeJson(ex, 200, Map.of("account", accountPayload(account)));
+                return;
+            }
+
+            if ("PUT".equals(method) && "/api/profile".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                JsonObject b = readBodyJson(ex);
+                String displayName = text(b, "displayName");
+                if (displayName.isBlank() || displayName.length() > 32) {
+                    writeJson(ex, 400, Map.of("error", "Display name must be 1-32 characters."));
+                    return;
+                }
+                String avatar = b.has("avatarDataUrl") && !b.get("avatarDataUrl").isJsonNull()
+                        ? b.get("avatarDataUrl").getAsString().trim()
+                        : account.avatarDataUrl;
+                String avatarError = validateAvatar(avatar);
+                if (avatarError != null) {
+                    writeJson(ex, 400, Map.of("error", avatarError));
+                    return;
+                }
+                account.displayName = displayName;
+                account.avatarDataUrl = avatar;
+                DB.save();
+                syncPlayerName(account);
+                writeJson(ex, 200, Map.of("account", accountPayload(account)));
+                return;
+            }
+
+            if ("GET".equals(method) && "/api/admin/users".equals(path)) {
+                Account admin = requireAdmin(ex);
+                if (admin == null) return;
+                writeJson(ex, 200, Map.of("users", DB.data.accounts.stream().map(Main::adminAccountPayload).toList()));
+                return;
+            }
+
+            if ("PUT".equals(method) && path.startsWith("/api/admin/users/")) {
+                Account admin = requireAdmin(ex);
+                if (admin == null) return;
+                String id = path.substring("/api/admin/users/".length());
+                Account target = DB.findAccount(id);
+                if (target == null) {
+                    writeJson(ex, 404, Map.of("error", "User not found."));
+                    return;
+                }
+                JsonObject b = readBodyJson(ex);
+                if (b.has("displayName")) {
+                    String name = text(b, "displayName");
+                    if (name.isBlank() || name.length() > 32) {
+                        writeJson(ex, 400, Map.of("error", "Display name must be 1-32 characters."));
+                        return;
+                    }
+                    target.displayName = name;
+                    syncPlayerName(target);
+                }
+                if (b.has("username")) {
+                    String username = text(b, "username");
+                    if (!username.matches("^[A-Za-z0-9_.-]{3,24}$")) {
+                        writeJson(ex, 400, Map.of("error", "Username must be 3-24 letters, numbers, dots, dashes, or underscores."));
+                        return;
+                    }
+                    Account existing = DB.findAccountByLogin(username);
+                    if (existing != null && !existing.id.equals(target.id)) {
+                        writeJson(ex, 409, Map.of("error", "Username is already used."));
+                        return;
+                    }
+                    target.username = username;
+                }
+                if (b.has("email")) {
+                    String email = text(b, "email").toLowerCase();
+                    if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+                        writeJson(ex, 400, Map.of("error", "Email is not valid."));
+                        return;
+                    }
+                    Account existing = DB.findAccountByLogin(email);
+                    if (existing != null && !existing.id.equals(target.id)) {
+                        writeJson(ex, 409, Map.of("error", "Email is already used."));
+                        return;
+                    }
+                    target.email = email;
+                }
+                if (b.has("isAdmin")) target.isAdmin = b.get("isAdmin").getAsBoolean();
+                if (b.has("scoreWins")) target.scoreWins = Math.max(0, b.get("scoreWins").getAsInt());
+                if (b.has("scoreLosses")) target.scoreLosses = Math.max(0, b.get("scoreLosses").getAsInt());
+                if (b.has("scoreGames")) target.scoreGames = Math.max(target.scoreWins + target.scoreLosses, b.get("scoreGames").getAsInt());
+                if (b.has("password") && !text(b, "password").isBlank()) target.setPassword(text(b, "password"));
+                DB.save();
+                writeJson(ex, 200, Map.of("user", adminAccountPayload(target)));
+                return;
+            }
+
+            if ("DELETE".equals(method) && path.startsWith("/api/admin/users/")) {
+                Account admin = requireAdmin(ex);
+                if (admin == null) return;
+                String id = path.substring("/api/admin/users/".length());
+                if (admin.id.equals(id)) {
+                    writeJson(ex, 400, Map.of("error", "The signed-in admin cannot delete themselves."));
+                    return;
+                }
+                boolean removed = DB.data.accounts.removeIf(a -> a.id.equals(id));
+                DB.data.sessions.entrySet().removeIf(e -> e.getValue().accountId.equals(id));
+                STATE.players.removeIf(p -> id.equals(p.accountId));
+                DB.save();
+                writeJson(ex, removed ? 200 : 404, removed ? Map.of("ok", true) : Map.of("error", "User not found."));
+                return;
+            }
+
+            if ("GET".equals(method) && "/api/rooms".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                writeJson(ex, 200, Map.of("rooms", DB.data.rooms.stream().map(Main::roomPayload).toList()));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/rooms".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                JsonObject b = readBodyJson(ex);
+                String name = text(b, "name");
+                String mode = text(b, "networkMode");
+                if (name.isBlank() || name.length() > 32) {
+                    writeJson(ex, 400, Map.of("error", "Room name must be 1-32 characters."));
+                    return;
+                }
+                Room room = Room.create(name, account.id, mode.isBlank() ? "local" : mode);
+                DB.data.rooms.add(room);
+                DB.save();
+                writeJson(ex, 201, Map.of("room", roomPayload(room)));
+                return;
+            }
+
+            if ("POST".equals(method) && path.startsWith("/api/rooms/") && path.endsWith("/join")) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                String roomId = path.substring("/api/rooms/".length(), path.length() - "/join".length());
+                Room room = DB.findRoom(roomId);
+                if (room == null) {
+                    writeJson(ex, 404, Map.of("error", "Room not found."));
+                    return;
+                }
+                if (!"lobby".equals(STATE.phase) && STATE.players.stream().noneMatch(p -> account.id.equals(p.accountId))) {
+                    writeJson(ex, 409, Map.of("error", "Game already started."));
+                    return;
+                }
+                Player existing = findPlayerByAccount(account.id);
+                if (existing == null) {
+                    String id = generateSessionId(account.username);
+                    while (findPlayer(id) != null) id = generateSessionId(account.username);
+                    existing = new Player(id, account.id, account.displayName);
+                    STATE.players.add(existing);
+                }
+                existing.roomId = room.id;
+                room.lastActiveAt = Instant.now().toString();
+                DB.save();
+                writeJson(ex, 200, Map.of("playerId", existing.id, "room", roomPayload(room)));
+                return;
+            }
+
             if ("GET".equals(method) && "/api/gm-state".equals(path)) {
-                writeJson(ex, 200, gmStatePayload());
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                writeJson(ex, 200, gmStatePayload(account));
                 return;
             }
 
             if ("POST".equals(method) && "/api/join".equals(path)) {
-                JsonObject b = readBodyJson(ex);
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                Room room = DB.defaultRoom();
+                Player existing = findPlayerByAccount(account.id);
+                if (existing != null) {
+                    writeJson(ex, 200, Map.of("playerId", existing.id));
+                    return;
+                }
                 if (!"lobby".equals(STATE.phase)) {
                     writeJson(ex, 409, Map.of("error", "Game already started."));
                     return;
                 }
-                String name = b.has("name") ? b.get("name").getAsString().trim() : "";
-                if (name.isBlank()) {
-                    writeJson(ex, 400, Map.of("error", "Name is required."));
-                    return;
-                }
-                if (name.length() > 24) {
-                    writeJson(ex, 400, Map.of("error", "Name max length is 24."));
-                    return;
-                }
-                String id = generateSessionId(name);
-                while (findPlayer(id) != null) id = generateSessionId(name);
-                Player p = new Player(id, name);
+                String id = generateSessionId(account.username);
+                while (findPlayer(id) != null) id = generateSessionId(account.username);
+                Player p = new Player(id, account.id, account.displayName);
+                p.roomId = room.id;
                 STATE.players.add(p);
                 writeJson(ex, 201, Map.of("playerId", p.id));
                 return;
             }
 
             if ("GET".equals(method) && path.startsWith("/api/player-state/")) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
                 String pid = path.substring("/api/player-state/".length());
                 Player p = findPlayer(pid);
-                if (p == null) {
+                if (p == null || !account.id.equals(p.accountId)) {
                     writeJson(ex, 404, Map.of("error", "Player not found."));
                     return;
                 }
-                writeJson(ex, 200, playerStatePayload(p));
+                writeJson(ex, 200, playerStatePayload(p, account));
                 return;
             }
 
             if ("POST".equals(method) && "/api/gm/config".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can change game setup."));
+                    return;
+                }
                 JsonObject b = readBodyJson(ex);
                 if (!"lobby".equals(STATE.phase)) {
                     writeJson(ex, 409, Map.of("error", "Cannot update config after game start."));
@@ -125,6 +373,12 @@ public class Main {
             }
 
             if ("POST".equals(method) && "/api/gm/settings".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can change timer settings."));
+                    return;
+                }
                 JsonObject b = readBodyJson(ex);
                 TimerSettings t = new TimerSettings(
                         positiveSecondOrDefault(b, "nightMafiaSec", STATE.timerSettings.nightMafiaSec),
@@ -145,11 +399,23 @@ public class Main {
             }
 
             if ("POST".equals(method) && "/api/gm/start".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can start the game."));
+                    return;
+                }
                 startGame(ex);
                 return;
             }
 
             if ("POST".equals(method) && "/api/gm/start-night".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can advance phases."));
+                    return;
+                }
                 if (!("night0".equals(STATE.phase) || "day_vote".equals(STATE.phase) || "discussion".equals(STATE.phase) || "morning".equals(STATE.phase))) {
                     writeJson(ex, 400, Map.of("error", "Cannot start night from current phase."));
                     return;
@@ -160,21 +426,24 @@ public class Main {
             }
 
             if ("POST".equals(method) && "/api/gm/next-phase".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can advance phases."));
+                    return;
+                }
                 nextPhaseInternal();
                 writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
                 return;
             }
 
-            if ("POST".equals(method) && "/api/gm/start-discussion".equals(path)) {
-                JsonObject b = readBodyJson(ex);
-                int sec = b.has("seconds") ? Math.max(1, b.get("seconds").getAsInt()) : STATE.timerSettings.discussionSec;
-                STATE.timerSettings.discussionSec = sec;
-                setPhase("discussion");
-                writeJson(ex, 200, Map.of("ok", true));
-                return;
-            }
-
             if ("POST".equals(method) && "/api/gm/reset".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can reset the lobby."));
+                    return;
+                }
                 STATE.reset();
                 writeJson(ex, 200, Map.of("ok", true));
                 return;
@@ -182,16 +451,13 @@ public class Main {
 
             if ("POST".equals(method) && "/api/player/mafia-vote".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                Player actor = requireAlivePlayer(b, "Mafia", "night_mafia");
-                if (actor == null) { writeJson(ex, 400, Map.of("error", STATE.lastError)); return; }
+                Player actor = requireAlivePlayer(ex, b, "Mafia", "night_mafia");
+                if (actor == null) return;
                 String target = b.get("targetId").getAsString();
                 if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 STATE.mafiaVotes.put(actor.id, target);
                 Player voted = findPlayer(target);
-                if (voted != null) {
-                    STATE.mafiaChat.add(new ChatMessage("SYSTEM", actor.name + " voted for " + voted.name));
-                    if (STATE.mafiaChat.size() > 50) STATE.mafiaChat.remove(0);
-                }
+                if (voted != null) pushMafiaChat("SYSTEM", actor.name + " voted for " + voted.name);
                 int pending = Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size());
                 writeJson(ex, 200, Map.of("ok", true, "pendingMafiaVotes", pending));
                 return;
@@ -199,8 +465,8 @@ public class Main {
 
             if ("POST".equals(method) && "/api/player/sheriff-investigate".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                Player actor = requireAlivePlayer(b, "Sheriff", "night_sheriff");
-                if (actor == null) { writeJson(ex, 400, Map.of("error", STATE.lastError)); return; }
+                Player actor = requireAlivePlayer(ex, b, "Sheriff", "night_sheriff");
+                if (actor == null) return;
                 String target = b.get("targetId").getAsString();
                 Player t = findPlayer(target);
                 if (t == null || !t.alive) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
@@ -213,8 +479,8 @@ public class Main {
 
             if ("POST".equals(method) && "/api/player/doctor-protect".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                Player actor = requireAlivePlayer(b, "Doctor", "night_doctor");
-                if (actor == null) { writeJson(ex, 400, Map.of("error", STATE.lastError)); return; }
+                Player actor = requireAlivePlayer(ex, b, "Doctor", "night_doctor");
+                if (actor == null) return;
                 String target = b.get("targetId").getAsString();
                 if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 if (target.equals(actor.lastDoctorTarget)) { writeJson(ex, 400, Map.of("error", "Doctor cannot protect same target consecutively.")); return; }
@@ -225,8 +491,8 @@ public class Main {
 
             if ("POST".equals(method) && "/api/player/vigilante-shoot".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                Player actor = requireAlivePlayer(b, "Vigilante", "night_vigilante");
-                if (actor == null) { writeJson(ex, 400, Map.of("error", STATE.lastError)); return; }
+                Player actor = requireAlivePlayer(ex, b, "Vigilante", "night_vigilante");
+                if (actor == null) return;
                 String target = b.has("targetId") && !b.get("targetId").isJsonNull() ? b.get("targetId").getAsString() : "";
                 if (!target.isBlank()) {
                     if (target.equals(actor.id)) { writeJson(ex, 400, Map.of("error", "Vigilante cannot self target.")); return; }
@@ -240,22 +506,21 @@ public class Main {
 
             if ("POST".equals(method) && "/api/player/day-vote".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                String pid = b.has("playerId") ? b.get("playerId").getAsString() : "";
-                Player actor = findPlayer(pid);
-                if (actor == null || !actor.alive) { writeJson(ex, 400, Map.of("error", "Alive player required.")); return; }
+                Player actor = requireSessionPlayer(ex, b);
+                if (actor == null) return;
+                if (!actor.alive) { writeJson(ex, 400, Map.of("error", "Alive player required.")); return; }
                 if (!"day_vote".equals(STATE.phase)) { writeJson(ex, 400, Map.of("error", "Not in day vote phase.")); return; }
                 String target = b.has("targetId") && !b.get("targetId").isJsonNull() ? b.get("targetId").getAsString() : "";
                 if (!target.isBlank() && !isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive or abstain.")); return; }
                 String stored = target.isBlank() ? null : target;
                 STATE.dayVotes.put(actor.id, stored);
-                String votedName = "abstain";
-                if (stored != null) {
-                    Player voted = findPlayer(stored);
-                    votedName = voted != null ? voted.name : stored;
-                }
                 if (STATE.publicDayVoteTally) {
-                    STATE.playerChat.add(new ChatMessage("SYSTEM", actor.name + " voted for " + votedName));
-                    if (STATE.playerChat.size() > 120) STATE.playerChat.remove(0);
+                    String votedName = "abstain";
+                    if (stored != null) {
+                        Player voted = findPlayer(stored);
+                        votedName = voted != null ? voted.name : stored;
+                    }
+                    pushPlayerChat("SYSTEM", actor.name + " voted for " + votedName);
                 }
                 int pending = Math.max(0, aliveCount() - STATE.dayVotes.size());
                 writeJson(ex, 200, Map.of("ok", true, "pendingDayVotes", pending));
@@ -264,25 +529,24 @@ public class Main {
 
             if ("POST".equals(method) && "/api/player/mafia-chat".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                Player actor = requireAlivePlayer(b, "Mafia", "night_mafia");
-                if (actor == null) { writeJson(ex, 400, Map.of("error", STATE.lastError)); return; }
-                String msg = b.has("message") ? b.get("message").getAsString().trim() : "";
+                Player actor = requireAlivePlayer(ex, b, "Mafia", "night_mafia");
+                if (actor == null) return;
+                String msg = text(b, "message");
                 if (msg.isBlank()) { writeJson(ex, 400, Map.of("error", "message required")); return; }
-                STATE.mafiaChat.add(new ChatMessage(actor.name, msg));
-                if (STATE.mafiaChat.size() > 50) STATE.mafiaChat.remove(0);
+                pushMafiaChat(actor.name, limitMessage(msg));
                 writeJson(ex, 200, Map.of("ok", true));
                 return;
             }
 
             if ("POST".equals(method) && "/api/player/chat".equals(path)) {
                 JsonObject b = readBodyJson(ex);
-                String pid = b.has("playerId") ? b.get("playerId").getAsString() : "";
-                Player actor = findPlayer(pid);
-                if (actor == null) { writeJson(ex, 400, Map.of("error", "Player required.")); return; }
-                String msg = b.has("message") ? b.get("message").getAsString().trim() : "";
+                Player actor = requireSessionPlayer(ex, b);
+                if (actor == null) return;
+                if (!actor.alive) { writeJson(ex, 403, Map.of("error", "Dead players are observe-only.")); return; }
+                if (!PUBLIC_CHAT_PHASES.contains(STATE.phase)) { writeJson(ex, 403, Map.of("error", "Public chat is available during morning, discussion, and voting.")); return; }
+                String msg = text(b, "message");
                 if (msg.isBlank()) { writeJson(ex, 400, Map.of("error", "message required")); return; }
-                STATE.playerChat.add(new ChatMessage(actor.name, msg));
-                if (STATE.playerChat.size() > 120) STATE.playerChat.remove(0);
+                pushPlayerChat(actor.name, limitMessage(msg));
                 writeJson(ex, 200, Map.of("ok", true));
                 return;
             }
@@ -291,45 +555,17 @@ public class Main {
         writeJson(ex, 404, Map.of("error", "API route not found."));
     }
 
-    private static void tickPhaseTransitions() {
-        int guard = 0;
-        while (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.phaseEndsAt > 0 && System.currentTimeMillis() >= STATE.phaseEndsAt && guard < 8) {
-            nextPhaseInternal();
-            guard += 1;
-        }
-    }
-
-    private static int phaseDurationSec(String phase) {
-        return switch (phase) {
-            case "night0" -> STATE.timerSettings.nightMafiaSec;
-            case "night_mafia" -> STATE.timerSettings.nightMafiaSec;
-            case "night_sheriff" -> STATE.timerSettings.nightSheriffSec;
-            case "night_doctor" -> STATE.timerSettings.nightDoctorSec;
-            case "night_vigilante" -> STATE.timerSettings.nightVigilanteSec;
-            case "morning" -> STATE.timerSettings.morningSec;
-            case "discussion" -> STATE.timerSettings.discussionSec;
-            case "day_vote" -> STATE.timerSettings.dayVoteSec;
-            default -> 0;
-        };
-    }
-
-    private static void setPhase(String phase) {
-        STATE.phase = phase;
-        int sec = phaseDurationSec(phase);
-        STATE.phaseEndsAt = sec > 0 ? System.currentTimeMillis() + sec * 1000L : 0L;
-    }
-
     private static void startGame(HttpExchange ex) throws IOException {
         if (!"lobby".equals(STATE.phase)) {
             writeJson(ex, 409, Map.of("error", "Game already started."));
             return;
         }
         if (STATE.players.size() < 3) {
-            writeJson(ex, 400, Map.of("error", "Need at least 3 players to start (testing mode)."));
+            writeJson(ex, 400, Map.of("error", "Need at least 3 players to start."));
             return;
         }
         if (!hasMinimumTestRoles(STATE.config)) {
-            writeJson(ex, 400, Map.of("error", "Testing launch requires: at least 1 Mafia, at least 1 Sheriff/Doctor/Vigilante, and at least 1 Town."));
+            writeJson(ex, 400, Map.of("error", "Start requires at least 1 Mafia, 1 Town, and 1 Sheriff/Doctor/Vigilante."));
             return;
         }
         List<String> pool = rolePool(STATE.config);
@@ -388,9 +624,7 @@ public class Main {
                 if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
                 else endNightAndEnterMorning();
             }
-            case "night_vigilante" -> {
-                endNightAndEnterMorning();
-            }
+            case "night_vigilante" -> endNightAndEnterMorning();
             case "morning" -> setPhase("discussion");
             case "discussion" -> setPhase("day_vote");
             case "day_vote" -> {
@@ -432,7 +666,7 @@ public class Main {
     }
 
     private static void resolveDayVote() {
-        String target = pluralityTarget(STATE.dayVotes, true);
+        String target = pluralityTarget(STATE.dayVotes);
         if (target != null) {
             Player p = findPlayer(target);
             if (p != null && p.alive) {
@@ -445,96 +679,124 @@ public class Main {
     private static void checkWin() {
         long mafiaAlive = alivePlayersByRole("Mafia").size();
         long townAlive = STATE.players.stream().filter(p -> p.alive && !"Mafia".equals(p.role)).count();
-        if (mafiaAlive == 0) {
+        String winner = null;
+        if (mafiaAlive == 0 && STATE.players.stream().anyMatch(p -> p.role != null)) winner = "Town";
+        else if (mafiaAlive >= townAlive && mafiaAlive > 0) winner = "Mafia";
+        if (winner != null) {
             STATE.phase = "game_over";
-            STATE.winner = "Town";
+            STATE.winner = winner;
             STATE.phaseEndsAt = 0;
-        } else if (mafiaAlive >= townAlive) {
-            STATE.phase = "game_over";
-            STATE.winner = "Mafia";
-            STATE.phaseEndsAt = 0;
+            recordScores(winner);
         }
     }
 
-    private static String majorityTarget(Map<String, String> voteMap, int voterCount) {
-        return majorityTarget(voteMap, majorityThreshold(voterCount), false);
+    private static void recordScores(String winner) {
+        if (STATE.scoresRecorded) return;
+        for (Player p : STATE.players) {
+            Account a = DB.findAccount(p.accountId);
+            if (a == null || p.role == null) continue;
+            boolean won = ("Mafia".equals(p.role) && "Mafia".equals(winner)) || (!"Mafia".equals(p.role) && "Town".equals(winner));
+            a.scoreGames += 1;
+            if (won) a.scoreWins += 1;
+            else a.scoreLosses += 1;
+        }
+        STATE.scoresRecorded = true;
+        DB.save();
     }
 
-    private static String majorityTarget(Map<String, String> voteMap, int needed, boolean allowNullVotes) {
-        Map<String, Integer> counts = new HashMap<>();
-        for (String t : voteMap.values()) {
-            if (t == null && allowNullVotes) continue;
-            if (t == null) continue;
-            counts.put(t, counts.getOrDefault(t, 0) + 1);
+    private static Account requireAccount(HttpExchange ex) throws IOException {
+        String token = sessionToken(ex);
+        Session session = token == null ? null : DB.data.sessions.get(token);
+        Account account = session == null ? null : DB.findAccount(session.accountId);
+        if (account == null) {
+            writeJson(ex, 401, Map.of("error", "Login required."));
+            return null;
         }
-        String best = null;
-        int bestCount = 0;
-        boolean tie = false;
-        for (Map.Entry<String, Integer> e : counts.entrySet()) {
-            if (e.getValue() > bestCount) {
-                best = e.getKey();
-                bestCount = e.getValue();
-                tie = false;
-            } else if (e.getValue() == bestCount) tie = true;
-        }
-        if (bestCount < needed || tie) return null;
-        return best;
+        session.lastSeenAt = Instant.now().toString();
+        return account;
     }
 
-    private static int majorityThreshold(int n) { return (n / 2) + 1; }
-
-    private static String pluralityTarget(Map<String, String> voteMap, boolean allowNullVotes) {
-        Map<String, Integer> counts = new HashMap<>();
-        for (String t : voteMap.values()) {
-            if (t == null && allowNullVotes) continue;
-            if (t == null) continue;
-            counts.put(t, counts.getOrDefault(t, 0) + 1);
+    private static Account requireAdmin(HttpExchange ex) throws IOException {
+        Account account = requireAccount(ex);
+        if (account == null) return null;
+        if (!account.isAdmin) {
+            writeJson(ex, 403, Map.of("error", "Admin access required."));
+            return null;
         }
-        String best = null;
-        int bestCount = 0;
-        boolean tie = false;
-        for (Map.Entry<String, Integer> e : counts.entrySet()) {
-            if (e.getValue() > bestCount) {
-                best = e.getKey();
-                bestCount = e.getValue();
-                tie = false;
-            } else if (e.getValue() == bestCount) tie = true;
-        }
-        if (bestCount <= 0 || tie) return null;
-        return best;
+        return account;
     }
 
-    private static Player requireAlivePlayer(JsonObject b, String role, String phase) {
-        String pid = b.has("playerId") ? b.get("playerId").getAsString() : "";
+    private static Player requireSessionPlayer(HttpExchange ex, JsonObject body) throws IOException {
+        Account account = requireAccount(ex);
+        if (account == null) return null;
+        String pid = body.has("playerId") ? body.get("playerId").getAsString() : "";
         Player p = findPlayer(pid);
-        if (p == null || !p.alive) { STATE.lastError = "Alive player required."; return null; }
-        if (!role.equals(p.role)) { STATE.lastError = "Role mismatch."; return null; }
-        if (!phase.equals(STATE.phase)) { STATE.lastError = "Wrong phase."; return null; }
+        if (p == null || !account.id.equals(p.accountId)) {
+            writeJson(ex, 403, Map.of("error", "Player session mismatch."));
+            return null;
+        }
         return p;
     }
 
-    private static boolean aliveRoleExists(String role) { return aliveByRole(role) != null; }
-    private static Player aliveByRole(String role) { return STATE.players.stream().filter(p -> p.alive && role.equals(p.role)).findFirst().orElse(null); }
-    private static List<Player> alivePlayersByRole(String role) { return STATE.players.stream().filter(p -> p.alive && role.equals(p.role)).collect(Collectors.toList()); }
-    private static int aliveCount() { return (int) STATE.players.stream().filter(p -> p.alive).count(); }
-    private static boolean isAlivePlayer(String id) { Player p = findPlayer(id); return p != null && p.alive; }
+    private static Player requireAlivePlayer(HttpExchange ex, JsonObject body, String role, String phase) throws IOException {
+        Player p = requireSessionPlayer(ex, body);
+        if (p == null) return null;
+        if (!p.alive) { writeJson(ex, 400, Map.of("error", "Alive player required.")); return null; }
+        if (!role.equals(p.role)) { writeJson(ex, 400, Map.of("error", "Role mismatch.")); return null; }
+        if (!phase.equals(STATE.phase)) { writeJson(ex, 400, Map.of("error", "Wrong phase.")); return null; }
+        return p;
+    }
 
-    private static Map<String, Object> gmStatePayload() {
-        List<Map<String, Object>> players = new ArrayList<>();
-        for (Player p : STATE.players) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", p.id);
-            row.put("name", p.name);
-            row.put("alive", p.alive);
-            row.put("role", p.role);
-            players.add(row);
+    private static boolean canManageGame(Account account) {
+        if (account.isAdmin) return true;
+        Room room = DB.defaultRoom();
+        return room != null && account.id.equals(room.hostAccountId);
+    }
+
+    private static void tickPhaseTransitions() {
+        int guard = 0;
+        while (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.phaseEndsAt > 0 && System.currentTimeMillis() >= STATE.phaseEndsAt && guard < 8) {
+            nextPhaseInternal();
+            guard += 1;
         }
+    }
+
+    private static int phaseDurationSec(String phase) {
+        return switch (phase) {
+            case "night0", "night_mafia" -> STATE.timerSettings.nightMafiaSec;
+            case "night_sheriff" -> STATE.timerSettings.nightSheriffSec;
+            case "night_doctor" -> STATE.timerSettings.nightDoctorSec;
+            case "night_vigilante" -> STATE.timerSettings.nightVigilanteSec;
+            case "morning" -> STATE.timerSettings.morningSec;
+            case "discussion" -> STATE.timerSettings.discussionSec;
+            case "day_vote" -> STATE.timerSettings.dayVoteSec;
+            default -> 0;
+        };
+    }
+
+    private static void setPhase(String phase) {
+        STATE.phase = phase;
+        int sec = phaseDurationSec(phase);
+        STATE.phaseEndsAt = sec > 0 ? System.currentTimeMillis() + sec * 1000L : 0L;
+    }
+
+    private static Map<String, Object> gmStatePayload(Account account) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("phase", STATE.phase);
         payload.put("round", STATE.round);
         payload.put("nightStep", STATE.nightStep);
         payload.put("phaseRemainingSec", phaseRemainingSec());
-        payload.put("players", players);
+        payload.put("players", STATE.players.stream().map(p -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", p.id);
+            row.put("accountId", p.accountId);
+            row.put("name", p.name);
+            row.put("alive", p.alive);
+            row.put("role", p.role);
+            Account a = DB.findAccount(p.accountId);
+            row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
+            return row;
+        }).toList());
         payload.put("playerCount", STATE.players.size());
         payload.put("aliveCount", aliveCount());
         payload.put("config", STATE.config.toMap());
@@ -550,20 +812,12 @@ public class Main {
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
         payload.put("playerChat", chatPayload(STATE.playerChat));
+        payload.put("canManage", canManageGame(account));
+        payload.put("room", roomPayload(DB.defaultRoom()));
         return payload;
     }
 
-    private static Map<String, Object> playerStatePayload(Player p) {
-        List<Map<String, Object>> players = new ArrayList<>();
-        for (Player other : STATE.players) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", other.id);
-            row.put("name", other.name);
-            row.put("alive", other.alive);
-            row.put("revealedRole", other.alive ? null : other.role);
-            players.add(row);
-        }
-
+    private static Map<String, Object> playerStatePayload(Player p, Account account) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", p.id);
         payload.put("name", p.name);
@@ -574,7 +828,16 @@ public class Main {
         payload.put("roleDescription", roleDescription(p.role));
         payload.put("vigilanteShotsRemaining", p.vigilanteShotsRemaining);
         payload.put("sheriffResult", p.lastSheriffResult);
-        payload.put("players", players);
+        payload.put("players", STATE.players.stream().map(other -> {
+            Account a = DB.findAccount(other.accountId);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", other.id);
+            row.put("name", other.name);
+            row.put("alive", other.alive);
+            row.put("revealedRole", other.alive ? null : other.role);
+            row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
+            return row;
+        }).toList());
         payload.put("morningDeaths", STATE.morningDeaths);
         payload.put("winner", STATE.winner);
         payload.put("mafiaVoteCurrent", STATE.mafiaVotes.get(p.id));
@@ -585,12 +848,155 @@ public class Main {
         payload.put("pendingDayVotes", Math.max(0, aliveCount() - STATE.dayVotes.size()));
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
         payload.put("timerSettings", STATE.timerSettings.toMap());
-
-        if ("Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase)) {
-            payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
-        } else payload.put("mafiaChat", List.of());
+        payload.put("room", roomPayload(DB.defaultRoom()));
+        payload.put("account", accountPayload(account));
+        payload.put("mafiaChat", "Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase) ? chatPayload(STATE.mafiaChat) : List.of());
         payload.put("playerChat", chatPayload(STATE.playerChat));
         return payload;
+    }
+
+    private static Map<String, Object> accountPayload(Account a) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", a.id);
+        m.put("email", a.email);
+        m.put("username", a.username);
+        m.put("displayName", a.displayName);
+        m.put("isAdmin", a.isAdmin);
+        m.put("avatarDataUrl", a.avatarDataUrl == null ? "" : a.avatarDataUrl);
+        m.put("scores", Map.of("games", a.scoreGames, "wins", a.scoreWins, "losses", a.scoreLosses));
+        return m;
+    }
+
+    private static Map<String, Object> adminAccountPayload(Account a) {
+        Map<String, Object> m = accountPayload(a);
+        m.put("createdAt", a.createdAt);
+        return m;
+    }
+
+    private static Map<String, Object> roomPayload(Room r) {
+        if (r == null) return Map.of();
+        return Map.of(
+                "id", r.id,
+                "name", r.name,
+                "networkMode", r.networkMode,
+                "hostAccountId", r.hostAccountId,
+                "createdAt", r.createdAt,
+                "lastActiveAt", r.lastActiveAt
+        );
+    }
+
+    private static void writeJson(HttpExchange ex, int status, Object data) throws IOException {
+        byte[] bytes = GSON.toJson(data).getBytes(StandardCharsets.UTF_8);
+        Headers h = ex.getResponseHeaders();
+        h.set("Content-Type", "application/json; charset=utf-8");
+        ex.sendResponseHeaders(status, bytes.length);
+        try (OutputStream out = ex.getResponseBody()) { out.write(bytes); }
+    }
+
+    private static JsonObject readBodyJson(HttpExchange ex) throws IOException {
+        try (InputStream in = ex.getRequestBody()) {
+            byte[] bytes = in.readAllBytes();
+            if (bytes.length == 0) return new JsonObject();
+            return GSON.fromJson(new String(bytes, StandardCharsets.UTF_8), JsonObject.class);
+        } catch (Exception ignored) {
+            return new JsonObject();
+        }
+    }
+
+    private static void serveStatic(HttpExchange ex, String path) throws IOException {
+        String normalized = "/".equals(path) ? "/index.html" : path;
+        if (normalized.contains("..")) { ex.sendResponseHeaders(403, -1); return; }
+        String resourcePath = "/public" + normalized;
+        try (InputStream in = Main.class.getResourceAsStream(resourcePath)) {
+            if (in == null) { ex.sendResponseHeaders(404, -1); return; }
+            byte[] bytes = in.readAllBytes();
+            ex.getResponseHeaders().set("Content-Type", contentType(normalized));
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = ex.getResponseBody()) { out.write(bytes); }
+        }
+    }
+
+    private static String contentType(String path) {
+        if (path.endsWith(".html")) return "text/html; charset=utf-8";
+        if (path.endsWith(".css")) return "text/css; charset=utf-8";
+        if (path.endsWith(".js")) return "application/javascript; charset=utf-8";
+        if (path.endsWith(".png")) return "image/png";
+        if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+        if (path.endsWith(".gif")) return "image/gif";
+        return "text/plain; charset=utf-8";
+    }
+
+    private static void addSecurityHeaders(HttpExchange ex) {
+        Headers h = ex.getResponseHeaders();
+        h.set("X-Content-Type-Options", "nosniff");
+        h.set("Referrer-Policy", "same-origin");
+    }
+
+    private static String text(JsonObject body, String key) {
+        if (!body.has(key) || body.get(key).isJsonNull()) return "";
+        return body.get(key).getAsString().trim();
+    }
+
+    private static String validateRegistration(String email, String username, String password) {
+        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) return "Email is not valid.";
+        if (!username.matches("^[A-Za-z0-9_.-]{3,24}$")) return "Username must be 3-24 letters, numbers, dots, dashes, or underscores.";
+        if (password.length() < 6 || password.length() > 128) return "Password must be 6-128 characters.";
+        return null;
+    }
+
+    private static String validateAvatar(String dataUrl) {
+        if (dataUrl == null || dataUrl.isBlank()) return null;
+        if (dataUrl.length() > 180_000) return "Profile image is too large.";
+        if (!dataUrl.matches("^data:image/(png|jpeg|jpg|gif);base64,.+")) return "Profile image must be png, jpg, jpeg, or gif.";
+        try {
+            String base64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
+            byte[] bytes = Base64.getDecoder().decode(base64);
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (image == null) return "Profile image could not be read.";
+            if (image.getWidth() > 100 || image.getHeight() > 100) return "Profile image must be max 100x100 pixels.";
+            return null;
+        } catch (Exception err) {
+            return "Profile image could not be decoded.";
+        }
+    }
+
+    private static String limitMessage(String msg) {
+        return msg.length() <= 240 ? msg : msg.substring(0, 240);
+    }
+
+    private static String sessionToken(HttpExchange ex) {
+        List<String> cookies = ex.getRequestHeaders().getOrDefault("Cookie", List.of());
+        for (String header : cookies) {
+            for (String part : header.split(";")) {
+                String[] kv = part.trim().split("=", 2);
+                if (kv.length == 2 && "mafia_session".equals(kv[0])) return kv[1];
+            }
+        }
+        return null;
+    }
+
+    private static void setSessionCookie(HttpExchange ex, String token) {
+        ex.getResponseHeaders().add("Set-Cookie", "mafia_session=" + token + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000");
+    }
+
+    private static void clearSessionCookie(HttpExchange ex) {
+        ex.getResponseHeaders().add("Set-Cookie", "mafia_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+    }
+
+    private static void syncPlayerName(Account account) {
+        for (Player p : STATE.players) {
+            if (account.id.equals(p.accountId)) p.name = account.displayName;
+        }
+    }
+
+    private static void pushMafiaChat(String author, String msg) {
+        STATE.mafiaChat.add(new ChatMessage(author, msg));
+        if (STATE.mafiaChat.size() > 50) STATE.mafiaChat.remove(0);
+    }
+
+    private static void pushPlayerChat(String author, String msg) {
+        STATE.playerChat.add(new ChatMessage(author, msg));
+        if (STATE.playerChat.size() > 120) STATE.playerChat.remove(0);
     }
 
     private static long phaseRemainingSec() {
@@ -611,38 +1017,43 @@ public class Main {
         return chat.stream().map(m -> Map.of("author", m.author, "message", m.message)).toList();
     }
 
-    private static String roleDescription(String role) {
-        return switch (role == null ? "" : role) {
-            case "Mafia" -> "Eliminate town each night with your team.";
-            case "Sheriff" -> "Investigate one player each night.";
-            case "Doctor" -> "Protect one player each night (no consecutive same target).";
-            case "Vigilante" -> "You have limited shots to kill at night.";
-            case "Town" -> "Find and eliminate the mafia.";
-            default -> "";
-        };
+    private static String majorityTarget(Map<String, String> voteMap, int voterCount) {
+        int needed = (voterCount / 2) + 1;
+        Map<String, Integer> counts = new HashMap<>();
+        for (String t : voteMap.values()) if (t != null) counts.put(t, counts.getOrDefault(t, 0) + 1);
+        return winningTarget(counts, needed);
     }
 
-    private static String generateSessionId(String name) {
-        String safe = name.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
-        if (safe.isBlank()) safe = "player";
-        int rand = ThreadLocalRandom.current().nextInt(1, 101);
-        return safe + "-" + rand;
+    private static String pluralityTarget(Map<String, String> voteMap) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (String t : voteMap.values()) if (t != null) counts.put(t, counts.getOrDefault(t, 0) + 1);
+        return winningTarget(counts, 1);
     }
 
-    private static Player findPlayer(String id) {
-        for (Player p : STATE.players) if (p.id.equals(id)) return p;
-        return null;
+    private static String winningTarget(Map<String, Integer> counts, int minimum) {
+        String best = null;
+        int bestCount = 0;
+        boolean tie = false;
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (e.getValue() > bestCount) {
+                best = e.getKey();
+                bestCount = e.getValue();
+                tie = false;
+            } else if (e.getValue() == bestCount) tie = true;
+        }
+        return bestCount >= minimum && !tie ? best : null;
     }
 
-    private static boolean hasMinimumTestRoles(RoleConfig cfg) {
-        return cfg.mafia >= 1 && (cfg.sheriff + cfg.doctor + cfg.vigilante) >= 1 && cfg.town >= 1;
-    }
-
+    private static boolean aliveRoleExists(String role) { return aliveByRole(role) != null; }
+    private static Player aliveByRole(String role) { return STATE.players.stream().filter(p -> p.alive && role.equals(p.role)).findFirst().orElse(null); }
+    private static List<Player> alivePlayersByRole(String role) { return STATE.players.stream().filter(p -> p.alive && role.equals(p.role)).collect(Collectors.toList()); }
+    private static int aliveCount() { return (int) STATE.players.stream().filter(p -> p.alive).count(); }
+    private static boolean isAlivePlayer(String id) { Player p = findPlayer(id); return p != null && p.alive; }
+    private static Player findPlayer(String id) { return STATE.players.stream().filter(p -> p.id.equals(id)).findFirst().orElse(null); }
+    private static Player findPlayerByAccount(String accountId) { return STATE.players.stream().filter(p -> accountId.equals(p.accountId)).findFirst().orElse(null); }
+    private static boolean hasMinimumTestRoles(RoleConfig cfg) { return cfg.mafia >= 1 && (cfg.sheriff + cfg.doctor + cfg.vigilante) >= 1 && cfg.town >= 1; }
     private static int intValue(JsonObject body, String key) { return body.has(key) ? body.get(key).getAsInt() : -1; }
-    private static int positiveSecondOrDefault(JsonObject body, String key, int fallback) {
-        if (!body.has(key)) return fallback;
-        return Math.max(1, body.get(key).getAsInt());
-    }
+    private static int positiveSecondOrDefault(JsonObject body, String key, int fallback) { return body.has(key) ? Math.max(1, body.get(key).getAsInt()) : fallback; }
 
     private static List<String> rolePool(RoleConfig cfg) {
         List<String> pool = new ArrayList<>();
@@ -654,42 +1065,22 @@ public class Main {
         return pool;
     }
 
-    private static JsonObject readBodyJson(HttpExchange ex) throws IOException {
-        try (InputStream in = ex.getRequestBody()) {
-            byte[] bytes = in.readAllBytes();
-            if (bytes.length == 0) return new JsonObject();
-            return GSON.fromJson(new String(bytes, StandardCharsets.UTF_8), JsonObject.class);
-        } catch (Exception ignored) {
-            return new JsonObject();
-        }
+    private static String roleDescription(String role) {
+        return switch (role == null ? "" : role) {
+            case "Mafia" -> "Eliminate town each night with your team.";
+            case "Sheriff" -> "Investigate one player each night.";
+            case "Doctor" -> "Protect one player each night. You cannot repeat the same target on consecutive nights.";
+            case "Vigilante" -> "Use limited night shots to remove a suspect, or skip.";
+            case "Town" -> "Read the table, argue well, and vote out the mafia.";
+            default -> "";
+        };
     }
 
-    private static void writeJson(HttpExchange ex, int status, Object data) throws IOException {
-        byte[] bytes = GSON.toJson(data).getBytes(StandardCharsets.UTF_8);
-        Headers h = ex.getResponseHeaders();
-        h.set("Content-Type", "application/json; charset=utf-8");
-        ex.sendResponseHeaders(status, bytes.length);
-        try (OutputStream out = ex.getResponseBody()) { out.write(bytes); }
-    }
-
-    private static void serveStatic(HttpExchange ex, String path) throws IOException {
-        String normalized = "/".equals(path) ? "/index.html" : path;
-        if (normalized.contains("..")) { ex.sendResponseHeaders(403, -1); return; }
-        String resourcePath = "/public" + normalized;
-        try (InputStream in = Main.class.getResourceAsStream(resourcePath)) {
-            if (in == null) { ex.sendResponseHeaders(404, -1); return; }
-            byte[] bytes = in.readAllBytes();
-            ex.getResponseHeaders().set("Content-Type", contentType(normalized));
-            ex.sendResponseHeaders(200, bytes.length);
-            try (OutputStream out = ex.getResponseBody()) { out.write(bytes); }
-        }
-    }
-
-    private static String contentType(String path) {
-        if (path.endsWith(".html")) return "text/html; charset=utf-8";
-        if (path.endsWith(".css")) return "text/css; charset=utf-8";
-        if (path.endsWith(".js")) return "application/javascript; charset=utf-8";
-        return "text/plain; charset=utf-8";
+    private static String generateSessionId(String name) {
+        String safe = name.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
+        if (safe.isBlank()) safe = "player";
+        int rand = ThreadLocalRandom.current().nextInt(1000, 10_000);
+        return safe + "-" + rand;
     }
 
     private static List<String> getLanUrls(int port) {
@@ -709,14 +1100,163 @@ public class Main {
         return urls;
     }
 
+    private static String hashPassword(String password, String salt) {
+        try {
+            PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), Base64.getDecoder().decode(salt), 120_000, 256);
+            byte[] hash = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (Exception err) {
+            throw new IllegalStateException("Password hashing failed.", err);
+        }
+    }
+
+    private static boolean verifyPassword(String password, String salt, String expectedHash) {
+        return MessageDigest.isEqual(hashPassword(password, salt).getBytes(StandardCharsets.UTF_8), expectedHash.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String newSalt() {
+        byte[] salt = new byte[16];
+        RNG.nextBytes(salt);
+        return Base64.getEncoder().encodeToString(salt);
+    }
+
+    private static final class LocalDatabase {
+        final Path path;
+        DatabaseData data = new DatabaseData();
+
+        LocalDatabase(Path path) { this.path = path; }
+
+        void load() {
+            try {
+                if (Files.exists(path)) {
+                    data = GSON.fromJson(Files.readString(path, StandardCharsets.UTF_8), DatabaseData.class);
+                    if (data == null) data = new DatabaseData();
+                    if (data.accounts == null) data.accounts = new ArrayList<>();
+                    if (data.rooms == null) data.rooms = new ArrayList<>();
+                    if (data.sessions == null) data.sessions = new HashMap<>();
+                }
+            } catch (Exception err) {
+                throw new IllegalStateException("Could not load local database.", err);
+            }
+        }
+
+        void save() {
+            try {
+                Files.createDirectories(path.getParent());
+                Files.writeString(path, GSON.toJson(data), StandardCharsets.UTF_8);
+            } catch (IOException err) {
+                throw new IllegalStateException("Could not save local database.", err);
+            }
+        }
+
+        void seedAdmin() {
+            Account admin = findAccountByLogin(ADMIN_EMAIL);
+            if (admin == null) admin = findAccountByLogin(ADMIN_USERNAME);
+            if (admin == null) {
+                data.accounts.add(Account.create(ADMIN_EMAIL, ADMIN_USERNAME, "Gabi Admin", ADMIN_PASSWORD, true));
+                return;
+            }
+            admin.email = ADMIN_EMAIL;
+            admin.username = ADMIN_USERNAME;
+            admin.isAdmin = true;
+        }
+
+        void ensureDefaultRoom() {
+            if (data.rooms.isEmpty()) {
+                Account admin = findAccountByLogin(ADMIN_USERNAME);
+                data.rooms.add(Room.create("Table One", admin == null ? "" : admin.id, "local"));
+            }
+        }
+
+        Room defaultRoom() {
+            ensureDefaultRoom();
+            return data.rooms.get(0);
+        }
+
+        Account findAccount(String id) {
+            return data.accounts.stream().filter(a -> a.id.equals(id)).findFirst().orElse(null);
+        }
+
+        Account findAccountByLogin(String login) {
+            String normalized = login == null ? "" : login.trim().toLowerCase();
+            return data.accounts.stream()
+                    .filter(a -> a.email.equalsIgnoreCase(normalized) || a.username.equalsIgnoreCase(normalized))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        Room findRoom(String id) {
+            return data.rooms.stream().filter(r -> r.id.equals(id)).findFirst().orElse(null);
+        }
+
+        String createSession(String accountId) {
+            String token = UUID.randomUUID() + "-" + UUID.randomUUID();
+            data.sessions.put(token, new Session(accountId));
+            return token;
+        }
+    }
+
+    private static final class DatabaseData {
+        List<Account> accounts = new ArrayList<>();
+        List<Room> rooms = new ArrayList<>();
+        Map<String, Session> sessions = new HashMap<>();
+    }
+
+    private static final class Account {
+        String id, email, username, displayName, salt, passwordHash, avatarDataUrl, createdAt;
+        boolean isAdmin;
+        int scoreGames, scoreWins, scoreLosses;
+
+        static Account create(String email, String username, String displayName, String password, boolean admin) {
+            Account a = new Account();
+            a.id = UUID.randomUUID().toString();
+            a.email = email;
+            a.username = username;
+            a.displayName = displayName;
+            a.createdAt = Instant.now().toString();
+            a.avatarDataUrl = "";
+            a.isAdmin = admin;
+            a.setPassword(password);
+            return a;
+        }
+
+        void setPassword(String password) {
+            salt = newSalt();
+            passwordHash = hashPassword(password, salt);
+        }
+    }
+
+    private static final class Session {
+        String accountId, createdAt, lastSeenAt;
+        Session(String accountId) {
+            this.accountId = accountId;
+            createdAt = Instant.now().toString();
+            lastSeenAt = createdAt;
+        }
+    }
+
+    private static final class Room {
+        String id, name, hostAccountId, networkMode, createdAt, lastActiveAt;
+        static Room create(String name, String hostAccountId, String mode) {
+            Room r = new Room();
+            r.id = UUID.randomUUID().toString();
+            r.name = name;
+            r.hostAccountId = hostAccountId;
+            r.networkMode = "internet".equalsIgnoreCase(mode) ? "internet" : "local";
+            r.createdAt = Instant.now().toString();
+            r.lastActiveAt = r.createdAt;
+            return r;
+        }
+    }
+
     private static final class GameState {
         String phase = "lobby";
         String nightStep = "-";
         int round = 0;
         String winner = null;
-        String lastError = null;
         String lastSheriffResult = null;
         long phaseEndsAt = 0L;
+        boolean scoresRecorded = false;
 
         List<Player> players = new ArrayList<>();
         RoleConfig config = new RoleConfig(2, 1, 1, 0, 1, 1);
@@ -738,9 +1278,9 @@ public class Main {
             nightStep = "-";
             round = 0;
             winner = null;
-            lastError = null;
             lastSheriffResult = null;
             phaseEndsAt = 0L;
+            scoresRecorded = false;
             players = new ArrayList<>();
             config = new RoleConfig(2, 1, 1, 0, 1, 1);
             timerSettings = new TimerSettings(60, 60, 60, 60, 60, 60, 60);
@@ -758,13 +1298,10 @@ public class Main {
 
     private static final class RoleConfig {
         int mafia, sheriff, doctor, vigilante, town, vigilanteShots;
-
         RoleConfig(int mafia, int sheriff, int doctor, int vigilante, int town, int vigilanteShots) {
             this.mafia = mafia; this.sheriff = sheriff; this.doctor = doctor; this.vigilante = vigilante; this.town = town; this.vigilanteShots = vigilanteShots;
         }
-
         boolean valid() { return mafia >= 0 && sheriff >= 0 && doctor >= 0 && vigilante >= 0 && town >= 0 && vigilanteShots >= 0; }
-
         Map<String, Integer> toMap() {
             Map<String, Integer> map = new LinkedHashMap<>();
             map.put("mafia", mafia);
@@ -779,7 +1316,6 @@ public class Main {
 
     private static final class TimerSettings {
         int nightMafiaSec, nightSheriffSec, nightDoctorSec, nightVigilanteSec, morningSec, discussionSec, dayVoteSec;
-
         TimerSettings(int nightMafiaSec, int nightSheriffSec, int nightDoctorSec, int nightVigilanteSec, int morningSec, int discussionSec, int dayVoteSec) {
             this.nightMafiaSec = nightMafiaSec;
             this.nightSheriffSec = nightSheriffSec;
@@ -789,7 +1325,6 @@ public class Main {
             this.discussionSec = discussionSec;
             this.dayVoteSec = dayVoteSec;
         }
-
         Map<String, Integer> toMap() {
             Map<String, Integer> m = new LinkedHashMap<>();
             m.put("nightMafiaSec", nightMafiaSec);
@@ -804,14 +1339,14 @@ public class Main {
     }
 
     private static final class Player {
-        String id, name, role;
+        String id, accountId, roomId, name, role;
         boolean alive;
         String lastDoctorTarget;
         String lastSheriffResult;
         int vigilanteShotsRemaining;
-
-        Player(String id, String name) {
+        Player(String id, String accountId, String name) {
             this.id = id;
+            this.accountId = accountId;
             this.name = name;
             this.alive = true;
             this.role = null;
