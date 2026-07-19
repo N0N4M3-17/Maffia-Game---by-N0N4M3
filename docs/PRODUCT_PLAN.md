@@ -51,7 +51,7 @@ The release gate is all of the following:
 | Chat and information controls | **Partially implemented** | 65% | Mafia chat is phase-gated; public player chat currently needs phase/dead-player restriction hardening. |
 | Player/GM experience | **Partially implemented** | 70% | Functional responsive UI and GM observability exist; onboarding, accessibility, and polish remain. |
 | Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
-| Release operations and documentation | **In progress** | 55% | Java launch instructions and a GM runbook exist; packaging, clean-environment verification, and release checklist remain. |
+| Release operations and documentation | **In progress** | 65% | Java launch instructions, GM runbook, CI workflow, and release checklist exist; packaging and clean-environment verification remain. |
 | Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
 
 ## 4. Milestones and Goalposts
@@ -117,7 +117,8 @@ The release gate is all of the following:
 
 - [ ] Create automated unit tests for role assignment, phase transitions, night resolution, vote resolution, win conditions, and authorization.
 - [ ] Add API/integration smoke tests for a complete short game.
-- [ ] Add a documented build/package command and a release checklist.
+- [ ] Add a documented build/package command.
+- [x] Add a release checklist with clean-host, LAN, secure-public, data/privacy, and known-limitations gates.
 - [ ] Test the packaged host on a clean Java 17 environment and multiple phone browsers on a LAN.
 - [ ] Fix all release-blocking issues found in playtests; publish known limitations.
 

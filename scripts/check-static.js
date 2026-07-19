@@ -35,6 +35,7 @@ const html = read('src/main/resources/public/index.html');
 const app = read('src/main/resources/public/app.js');
 const readme = read('README.md');
 const gmRunbook = read('docs/GM_RUNBOOK.md');
+const releaseChecklist = read('docs/RELEASE_CHECKLIST.md');
 const ciWorkflow = read('.github/workflows/ci.yml');
 const packageJson = JSON.parse(read('package.json'));
 const nodeEntry = read('server.js');
@@ -43,7 +44,10 @@ assert(packageJson.scripts.start === 'node scripts/start-java-host.js', 'npm sta
 assert(nodeEntry.includes("require('./scripts/start-java-host')"), 'server.js must delegate to the Java host wrapper');
 assert(nodeLauncher.includes("['exec:java']"), 'Node launcher must run Maven exec:java');
 assert(readme.includes('docs/GM_RUNBOOK.md'), 'README must link the GM runbook');
+assert(readme.includes('docs/RELEASE_CHECKLIST.md'), 'README must link the release checklist');
 assert(gmRunbook.includes('First Admin Login') && gmRunbook.includes('Secure Public Hosting'), 'GM runbook must cover admin login and public hosting');
+assert(releaseChecklist.includes('Clean Host Smoke Test') && releaseChecklist.includes('Known Limitations'), 'release checklist must cover smoke tests and known limitations');
+assert(releaseChecklist.includes('PUBLIC_URL=https://your-secure-host.example mvn exec:java'), 'release checklist must cover secure public hosting verification');
 assert(ciWorkflow.includes('actions/setup-java@v4') && ciWorkflow.includes('mvn -q test'), 'CI must run Maven tests with Java');
 assert(ciWorkflow.includes('npm test'), 'CI must run static checks');
 assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKDF2-HMAC-SHA256');
