@@ -100,6 +100,7 @@ assert(app.includes('gmGuidanceMarkup') && app.includes('playerGuidanceMarkup') 
 assert(app.includes("gm.phase === 'lobby'") && app.includes('gmConsoleMarkup') && !app.includes('textContent = JSON.stringify'), 'GM active-round feed must be rendered as UI instead of raw JSON');
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
 assert(app.includes('pendingActionMarkup') && app.includes('pending-chip'), 'GM console must render current pending action players');
+assert(app.includes('gmCommand') || (app.includes('gm-command-shell') && app.includes('gmVisiblePlayers') && app.includes('data-gm-button')), 'GM active screen must render as a command-center scene excluding the GM account from displayed players');
 assert(app.includes('gm-action-notice') && app.includes('result.hold'), 'GM/player action result hold notices must be rendered before auto-advance');
 assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
 assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
@@ -122,6 +123,7 @@ assert(read('src/main/resources/public/styles.css').includes('.play-grid.role-pe
 assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tray') && read('src/main/resources/public/styles.css').includes('#tray-timer'), 'mobile action tray must be styled for portrait play');
 assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');
 assert(read('src/main/resources/public/styles.css').includes('.gm-action-notice'), 'GM action result notice must be styled as a feed element');
+assert(read('src/main/resources/public/styles.css').includes('.gm-command-shell') && read('src/main/resources/public/styles.css').includes('.gm-event-log') && read('src/main/resources/public/styles.css').includes('.gm-player-card'), 'GM command center scene must be styled with table stage and event log');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {
