@@ -579,6 +579,101 @@ function gmConsoleMarkup(gm) {
   `;
 }
 
+function deadOverviewMarkup(ps) {
+  const players = ps.observerPlayers || [];
+  const alive = players.filter((player) => player.alive).length;
+  const dead = Math.max(0, players.length - alive);
+  const deaths = ps.morningDeaths?.length
+    ? ps.morningDeaths.map((d) => `<div><strong>${escapeHtml(d.name)}</strong> ${escapeHtml(d.role || 'Unknown')}</div>`).join('')
+    : '<p class="muted">No announced deaths.</p>';
+  const finals = Object.entries(ps.finalStatements || {}).map(([id, message]) => {
+    const player = players.find((p) => p.id === id);
+    return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${escapeHtml(message)}</div>`;
+  }).join('');
+  const observerState = {
+    phase: ps.phase,
+    round: ps.round,
+    phaseRemainingSec: ps.phaseRemainingSec,
+    actionNoticeTitle: ps.observerActionNoticeTitle || '',
+    actionNoticeBody: ps.observerActionNoticeBody || '',
+    lastSheriffResult: ps.observerLastSheriffResult || '',
+    morningDeaths: ps.morningDeaths || [],
+    mafiaChat: [],
+    playerChat: ps.playerChat || [],
+    currentActionName: ps.observerCurrentActionName || 'Current action',
+    pendingActionPlayers: ps.observerPendingActionPlayers || [],
+  };
+  return `
+    <div class="gm-command-shell dead-command-shell">
+      <aside class="gm-command-rail">
+        <div class="gm-master-badge">${roleIcon('Hidden')}<strong>Observer</strong></div>
+        <div class="gm-phase-box">
+          <span>Phase</span>
+          <strong>${escapeHtml(phaseTitle(ps.phase, ps.round))}</strong>
+          <em>${fmtSec(ps.phaseRemainingSec || 0)} remaining</em>
+        </div>
+        <section class="gm-rail-section">
+          <h4>Role distribution</h4>
+          ${gmRoleDistribution(players)}
+        </section>
+      </aside>
+      <main class="gm-table-stage">
+        <header class="gm-stage-header">
+          <h4>Players</h4>
+          <span>${players.length} total / ${alive} alive / ${dead} dead</span>
+        </header>
+        <div class="gm-player-grid">
+          ${players.length ? players.map(gmPlayerCard).join('') : '<p class="muted">No table players seated.</p>'}
+        </div>
+      </main>
+      <aside class="gm-event-log">
+        <h4>Event log <span>Observer</span></h4>
+        <div class="gm-log-lines">${gmEventLines(observerState, players)}</div>
+        <div class="gm-night-summary">
+          <h5>Table summary</h5>
+          ${pendingActionMarkup(observerState)}
+          <div class="feed-lines">${deaths}</div>
+          <div class="feed-lines">${finals || '<p class="muted">No final statements submitted.</p>'}</div>
+        </div>
+      </aside>
+    </div>
+    <div class="gm-detail-drawer dead-detail-drawer">
+      <div class="gm-stat-grid">
+        ${statCard('Round', ps.round ?? 0)}
+        ${statCard('Alive', `${alive}/${players.length}`, 'ok')}
+        ${statCard('Pending', (ps.observerPendingActionPlayers || []).length)}
+        ${statCard('Result', ps.winner || 'Playing')}
+      </div>
+      <div class="gm-feed-grid">
+        <section class="feed-card">
+          <h4>Night / vote outcomes</h4>
+          <div class="feed-lines">${deaths}</div>
+        </section>
+        <section class="feed-card">
+          <h4>Final statements</h4>
+          <div class="feed-lines">${finals || '<p class="muted">No final statements submitted.</p>'}</div>
+        </section>
+        ${tallyMarkup('Mafia vote tally', ps.observerMafiaVoteTally, players)}
+        ${tallyMarkup('Day vote tally', ps.observerDayVoteTally, players)}
+        ${chatPreview('Public channel', ps.playerChat)}
+      </div>
+    </div>
+  `;
+}
+
+function renderDeadOverview(ps) {
+  const panel = $('dead-overview-panel');
+  const target = $('dead-overview');
+  if (!panel || !target) return;
+  const canObserve = !!ps && (!ps.alive || ps.phase === 'game_over') && (ps.observerPlayers || []).length;
+  panel.classList.toggle('hidden', !canObserve);
+  if (!canObserve) {
+    target.innerHTML = '';
+    return;
+  }
+  target.innerHTML = deadOverviewMarkup(ps);
+}
+
 function gmGuidanceMarkup(gm) {
   const deaths = gm.morningDeaths?.length ? gm.morningDeaths.map((d) => d.name).join(', ') : '';
   const guides = {
@@ -653,6 +748,7 @@ async function refreshPlayer() {
   if (!state.playerId) {
     state.lastPlayerState = null;
     renderMobileActionTray(null);
+    renderDeadOverview(null);
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
     $('player-phase-guide').innerHTML = '<strong>Take a seat</strong><span>Join the current room to enter the table.</span>';
@@ -670,6 +766,7 @@ async function refreshPlayer() {
     renderPlayerAction(ps);
     renderPlayerList(ps.players || []);
     renderChats(ps);
+    renderDeadOverview(ps);
   } catch (err) {
     localStorage.removeItem('playerId');
     state.playerId = null;
@@ -682,6 +779,7 @@ async function refreshPlayer() {
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
     renderMobileActionTray(null);
+    renderDeadOverview(null);
     $('player-phase-guide').innerHTML = '<strong>Seat lost</strong><span>Join the current room again to reconnect.</span>';
   }
 }
@@ -971,7 +1069,7 @@ function actionMarkup(ps) {
     if (ps.finalStatementEligible) return '<p class="muted">Final statement submitted. Waiting for the table.</p>';
     return '<p class="muted">Final statements are in progress. Listen carefully.</p>';
   }
-  if (!ps.alive) return '<p class="danger-text">You are dead. Observe only.</p>';
+  if (!ps.alive) return '<p class="danger-text">You are dead. Observe only. The table overview is open below.</p>';
   if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionPicker('submit-mafia', ps, { label: 'Submit mafia vote', hint: `${ps.pendingMafiaVotes || 0} mafia pending.` });
   if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionPicker('submit-sheriff', ps, { label: 'Investigate', hint: 'Choose one alive player to inspect.', extra: sheriffResultMarkup(ps) });
   if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionPicker('submit-doctor', ps, { label: 'Protect', hint: 'You may protect yourself, but cannot repeat last night.', allowSelf: true });

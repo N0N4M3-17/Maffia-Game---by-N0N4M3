@@ -1088,6 +1088,45 @@ code {
   gap: 10px;
 }
 
+.dead-overview-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.dead-overview-panel.hidden {
+  display: none;
+}
+
+#dead-overview {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.dead-command-shell {
+  min-height: clamp(430px, 58vh, 680px);
+}
+
+.dead-command-shell .gm-master-badge {
+  color: #d9d3c2;
+  border-color: rgba(217, 211, 194, .42);
+}
+
+.dead-command-shell .gm-phase-box {
+  border-color: rgba(111, 82, 255, .48);
+  background: rgba(111, 82, 255, .12);
+}
+
+.dead-command-shell .gm-phase-box strong {
+  color: var(--gold);
+}
+
+.dead-detail-drawer {
+  animation: panelIn .35s ease both;
+}
+
 .feed-card {
   min-height: 132px;
   padding: 12px;

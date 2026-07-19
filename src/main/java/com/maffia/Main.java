@@ -1076,6 +1076,27 @@ public class Main {
             row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
             return row;
         }).toList());
+        boolean observer = !p.alive || "game_over".equals(STATE.phase);
+        payload.put("observerPlayers", observer
+                ? STATE.players.stream().map(other -> {
+                    Account a = DB.findAccount(other.accountId);
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", other.id);
+                    row.put("accountId", other.accountId);
+                    row.put("name", other.name);
+                    row.put("alive", other.alive);
+                    row.put("role", other.role);
+                    row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
+                    return row;
+                }).toList()
+                : List.of());
+        payload.put("observerCurrentActionName", observer ? currentActionName() : "");
+        payload.put("observerPendingActionPlayers", observer ? pendingActionPlayerNames() : List.of());
+        payload.put("observerActionNoticeTitle", observer ? nullToEmpty(STATE.actionNoticeTitle) : "");
+        payload.put("observerActionNoticeBody", observer ? nullToEmpty(STATE.actionNoticeBody) : "");
+        payload.put("observerLastSheriffResult", observer ? nullToEmpty(STATE.lastSheriffResult) : "");
+        payload.put("observerMafiaVoteTally", observer ? tally(STATE.mafiaVotes) : Map.of());
+        payload.put("observerDayVoteTally", observer ? tally(STATE.dayVotes) : Map.of());
         payload.put("morningDeaths", STATE.morningDeaths);
         payload.put("finalStatements", STATE.finalStatements);
         payload.put("finalStatementEligible", STATE.finalStatementPlayerIds.contains(p.id));

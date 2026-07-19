@@ -79,6 +79,7 @@ assert(backend.includes('ACTION_RESULT_HOLD_MS') && backend.includes('holdAction
 assert(backend.includes('"/api/gm/players/"') && backend.includes('Seats can only be removed before the game starts'), 'GM must be able to remove lobby player seats before launch');
 assert(backend.includes('!Objects.equals(previous, stored)') && backend.includes('!target.equals(previous)'), 'unchanged repeated votes must not duplicate system messages');
 assert(backend.includes('boolean manager = canManageGame(account)') && backend.includes('manager ? chatPayload(STATE.mafiaChat) : List.of()'), 'GM state must hide private console data from non-managers');
+assert(backend.includes('observerPlayers') && backend.includes('observerPendingActionPlayers') && backend.includes('observerLastSheriffResult'), 'dead player payload must expose read-only observer table overview fields');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
 assert(backend.includes('Another room is active'), 'room switching must be blocked while a table is in progress');
 assert(backend.includes('"/api/my-player"') && backend.includes('findPlayerByAccount(account.id)'), 'server must expose account-based player seat recovery');
@@ -90,6 +91,7 @@ assert(html.includes('action-panel-shell') && html.includes('table-panel'), 'pla
 assert(html.includes('mobile-action-tray') && html.includes('tray-phase') && html.includes('tray-target'), 'play screen must expose a mobile action tray');
 assert(html.includes('gm-phase-guide') && html.includes('player-phase-guide'), 'GM and player screens must expose phase guidance regions');
 assert(html.includes('gm-setup-panel') && html.includes('gm-timer-panel') && html.includes('gm-console-panel'), 'Host screen must separate setup, timers, and GM console regions');
+assert(html.includes('dead-overview-panel') && html.includes('dead-overview'), 'dead player play screen must include an observer overview mount');
 assert(html.includes('deal-stage') && html.includes('role-symbol'), 'Night 0 role reveal must include the animated deal stage and role symbol slot');
 assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText'), 'invite copy action must be wired');
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
@@ -104,6 +106,7 @@ assert(app.includes("gm.phase === 'lobby'") && app.includes('gmConsoleMarkup') &
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
 assert(app.includes('pendingActionMarkup') && app.includes('pending-chip'), 'GM console must render current pending action players');
 assert(app.includes('gmCommand') || (app.includes('gm-command-shell') && app.includes('gmVisiblePlayers') && app.includes('data-gm-button')), 'GM active screen must render as a command-center scene excluding the GM account from displayed players');
+assert(app.includes('renderDeadOverview') && app.includes('deadOverviewMarkup') && app.includes('observerPlayers'), 'dead players must render a read-only GM-style overview');
 assert(app.includes('gm-action-notice') && app.includes('result.hold'), 'GM/player action result hold notices must be rendered before auto-advance');
 assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
 assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
@@ -128,6 +131,7 @@ assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tra
 assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');
 assert(read('src/main/resources/public/styles.css').includes('.gm-action-notice'), 'GM action result notice must be styled as a feed element');
 assert(read('src/main/resources/public/styles.css').includes('.gm-command-shell') && read('src/main/resources/public/styles.css').includes('.gm-event-log') && read('src/main/resources/public/styles.css').includes('.gm-player-card'), 'GM command center scene must be styled with table stage and event log');
+assert(read('src/main/resources/public/styles.css').includes('.dead-overview-panel') && read('src/main/resources/public/styles.css').includes('.dead-command-shell'), 'dead player observer overview must be styled as a wide command scene');
 assert(read('src/main/resources/public/styles.css').includes('.host-grid.gm-command-view') && read('src/main/resources/public/styles.css').includes('width: min(980px, calc(100% - 56px))') && !read('src/main/resources/public/styles.css').includes('width: min(520px, 88%)'), 'active GM command view must use the available workspace width');
 assert(read('src/main/resources/public/styles.css').includes('.seat-remove') && read('src/main/resources/public/styles.css').includes('.manager-seat'), 'host roster seat management must be styled');
 assert(read('src/main/resources/public/styles.css').includes('.chat-status') && read('src/main/resources/public/styles.css').includes('.chat-form.disabled'), 'closed public chat state must be styled');
