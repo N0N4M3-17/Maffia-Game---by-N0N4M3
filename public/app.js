@@ -246,7 +246,7 @@ function roleTotal() {
 function renderRoleControls() {
   $('role-controls').innerHTML = Object.keys(roleLabels).map((key) => `
     <div class="stepper">
-      <span>${roleLabels[key]}</span>
+      <span><span class="role-mini-icon ${key}">${roleIcon(roleLabels[key])}</span>${roleLabels[key]}</span>
       <div>
         <button data-role-dec="${key}" aria-label="Decrease ${roleLabels[key]}">-</button>
         <strong id="${key}-count">${state.roles[key]}</strong>
@@ -255,7 +255,7 @@ function renderRoleControls() {
     </div>
   `).join('') + `
     <div class="stepper">
-      <span>Vigilante shots</span>
+      <span><span class="role-mini-icon vigilante">${roleIcon('Vigilante')}</span>Vigilante shots</span>
       <div>
         <button data-shot-dec aria-label="Decrease vigilante shots">-</button>
         <strong id="vigi-shots-count">${state.vigilanteShots}</strong>
@@ -340,6 +340,9 @@ async function resetLobby() {
 
 async function refreshGm() {
   const gm = await api('/api/gm-state');
+  const hostTab = document.querySelector('[data-tab="host"]');
+  if (hostTab) hostTab.classList.toggle('hidden', !gm.canManage);
+  if (!gm.canManage && document.querySelector('#tab-host.active')) showTab('play');
   const setupVisible = gm.phase === 'lobby' || gm.phase === 'game_over';
   $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
   $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
@@ -558,6 +561,9 @@ function playerGuidanceMarkup(ps) {
 }
 
 function renderRole(ps) {
+  state.currentPlayerPhase = ps.phase;
+  renderDealStage(ps);
+  $('role-symbol').innerHTML = roleIcon(ps.role || 'Hidden');
   $('role-name').textContent = (ps.role || 'Waiting').toUpperCase();
   const team = ps.role === 'Mafia' && ps.mafiaTeam?.length
     ? ` Team: ${ps.mafiaTeam.map((mate) => mate.name).join(', ')}.`
@@ -565,15 +571,69 @@ function renderRole(ps) {
   $('role-desc').textContent = `${ps.roleDescription || 'Role appears after the host launches the game.'}${team}`;
   $('vigi-ammo').textContent = ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
   if (state.roleReveal.lastPhase !== ps.phase) {
-    state.roleReveal = { revealed: ps.phase !== 'night0', acknowledged: false, lastPhase: ps.phase };
+    state.roleReveal = { revealed: ps.phase !== 'night0' ? false : state.roleReveal.revealed, acknowledged: false, lastPhase: ps.phase };
   }
-  $('role-card').classList.toggle('masked', ps.phase === 'night0' && !state.roleReveal.revealed && !state.roleReveal.acknowledged);
-  $('role-card').className = `role-card ${String(ps.role || '').toLowerCase()} ${$('role-card').classList.contains('masked') ? 'masked' : ''}`;
+  const cardRevealed = ps.phase === 'night0' && (state.roleReveal.revealed || state.roleReveal.acknowledged);
+  const cardMasked = ps.phase === 'night0' && !cardRevealed;
+  $('role-card').className = `role-card ${cardRevealed ? 'revealed ' + String(ps.role || '').toLowerCase() : 'neutral'} ${cardMasked ? 'masked' : ''}`;
   $('night0-controls').classList.toggle('hidden', ps.phase !== 'night0');
-  if ($('role-card').classList.contains('masked')) {
+  if (cardMasked) {
+    $('role-symbol').innerHTML = roleIcon('Hidden');
     $('role-name').textContent = 'HIDDEN';
     $('role-desc').textContent = 'Tap reveal when nobody else can see your screen.';
   }
+}
+
+function toggleRolePeek() {
+  if (state.currentPlayerPhase !== 'night0') return;
+  state.roleReveal.revealed = !state.roleReveal.revealed;
+  state.roleReveal.acknowledged = false;
+  state.lastActionRenderKey = '';
+  refreshPlayer().catch((err) => setMessage(err.message, true));
+}
+
+function roleCardKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  toggleRolePeek();
+}
+
+function renderDealStage(ps) {
+  const stage = $('deal-stage');
+  if (!stage) return;
+  const showDeal = ps.phase === 'night0';
+  stage.classList.toggle('hidden', !showDeal);
+  if (!showDeal) {
+    stage.innerHTML = '';
+    return;
+  }
+  const players = ps.players || [];
+  const selfIndex = Math.max(0, players.findIndex((p) => p.id === ps.id));
+  const revealed = state.roleReveal.revealed || state.roleReveal.acknowledged;
+  stage.innerHTML = `
+    <div class="deal-header">
+      <strong>${revealed ? `You are the ${escapeHtml(ps.role || 'Unknown')}` : 'Cards are being dealt'}</strong>
+      <span>${revealed ? 'Keep your identity hidden until the table earns it.' : `${players.length} role card(s) for ${players.length} seated player(s).`}</span>
+    </div>
+    <div class="deal-table" style="--card-count:${Math.max(players.length, 1)}">
+      ${players.map((player, index) => {
+        const isSelf = index === selfIndex;
+        const faceUp = isSelf && revealed;
+        return `
+          <article class="deal-card ${isSelf ? 'mine' : ''} ${faceUp ? 'revealed' : ''}" style="--deal-index:${index}; --deal-mid:${selfIndex}">
+            <div class="deal-card-inner">
+              <div class="deal-card-back"><span></span></div>
+              <div class="deal-card-front ${String(ps.role || '').toLowerCase()}">
+                ${roleIcon(ps.role)}
+                <strong>${escapeHtml(ps.role || 'Role')}</strong>
+                <small>${isSelf ? 'Your card' : 'Hidden'}</small>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 function aliveTargets(ps, allowSelf = false) {
@@ -593,12 +653,24 @@ function actionStoreKey(ps, action) {
   return `${ps.round}|${ps.phase}|${ps.role}|${action}`;
 }
 
-function resultIcon(kind) {
+function roleIcon(kind) {
   if (kind === 'Mafia') {
-    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M10 22h20l4 6H6l4-6Z"/><path d="M14 11h12l3 11H11l3-11Z"/><path d="M11 21h18"/></svg>';
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M9 23h22l4 6H5l4-6Z"/><path d="M14 11h12l3 12H11l3-12Z"/><path d="M11 22h18"/></svg>';
+  }
+  if (kind === 'Sheriff') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m20 6 4 6 7 1-2 7 3 6-7 2-5 5-5-5-7-2 3-6-2-7 7-1 4-6Z"/><path d="M16 20h8"/><path d="M20 16v8"/></svg>';
+  }
+  if (kind === 'Doctor') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m27 7 6 6-17 17-8 2 2-8 17-17Z"/><path d="m23 11 6 6"/><path d="M10 24l6 6"/></svg>';
+  }
+  if (kind === 'Vigilante') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 18h17l5 4v4H17l-2 6h-5l2-6H8v-8Z"/><path d="M25 18v-4h6"/><path d="M13 26h6"/></svg>';
   }
   if (kind === 'Town') {
     return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20 20 10l12 10"/><path d="M12 19v13h16V19"/><path d="M17 32v-8h6v8"/></svg>';
+  }
+  if (kind === 'Hidden') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 8 32 20 20 32 8 20 20 8Z"/></svg>';
   }
   return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="m11 21 6 6 13-15"/></svg>';
 }
@@ -608,7 +680,7 @@ function sheriffResultMarkup(ps) {
   const target = ps.sheriffResultTargetName ? `${escapeHtml(ps.sheriffResultTargetName)} is` : 'Result';
   return `
     <div class="result-card ${ps.sheriffResult === 'Mafia' ? 'mafia' : 'town'}">
-      <span class="result-icon">${resultIcon(ps.sheriffResult)}</span>
+      <span class="result-icon">${roleIcon(ps.sheriffResult)}</span>
       <div><strong>${target} ${escapeHtml(ps.sheriffResult)}</strong><span>${ps.sheriffResult === 'Mafia' ? 'Mafia alignment confirmed.' : 'Town alignment confirmed.'}</span></div>
     </div>
   `;
@@ -619,7 +691,7 @@ function targetTile(player, selected) {
     <button class="target-tile ${selected ? 'selected' : ''}" type="button" data-target-id="${escapeHtml(player.id)}" aria-pressed="${selected ? 'true' : 'false'}">
       <span class="target-frame">
         ${avatar(player, 'avatar target-avatar')}
-        <span class="target-check">${resultIcon('check')}</span>
+        <span class="target-check">${roleIcon('check')}</span>
       </span>
       <span>${escapeHtml(player.name)}</span>
     </button>
@@ -635,7 +707,7 @@ function actionPicker(action, ps, options) {
   const targets = aliveTargets(ps, !!options.allowSelf);
   const tiles = targets.map((player) => targetTile(player, selected === player.id)).join('');
   const abstainTile = options.includeAbstain
-    ? `<button class="target-tile skip ${selected === '' ? 'selected' : ''}" type="button" data-target-id="" aria-pressed="${selected === '' ? 'true' : 'false'}"><span class="target-frame"><span class="skip-mark">--</span><span class="target-check">${resultIcon('check')}</span></span><span>${escapeHtml(options.skipLabel || 'Skip')}</span></button>`
+    ? `<button class="target-tile skip ${selected === '' ? 'selected' : ''}" type="button" data-target-id="" aria-pressed="${selected === '' ? 'true' : 'false'}"><span class="target-frame"><span class="skip-mark">--</span><span class="target-check">${roleIcon('check')}</span></span><span>${escapeHtml(options.skipLabel || 'Skip')}</span></button>`
     : '';
   const doctorRepeat = action === 'submit-doctor' && selected && selected === ps.lastDoctorTarget;
   const needsTarget = !options.includeAbstain && !selected;
@@ -892,6 +964,8 @@ function bindEvents() {
   $('reveal-role-btn').addEventListener('click', () => { state.roleReveal.revealed = true; state.lastActionRenderKey = ''; refreshPlayer(); });
   $('hide-role-btn').addEventListener('click', () => { state.roleReveal.revealed = false; refreshPlayer(); });
   $('ack-role-btn').addEventListener('click', () => { state.roleReveal.acknowledged = true; state.roleReveal.revealed = true; refreshPlayer(); });
+  $('role-card').addEventListener('click', toggleRolePeek);
+  $('role-card').addEventListener('keydown', roleCardKeydown);
   $('mafia-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('mafia').catch((err) => setMessage(err.message, true)); });
   $('player-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('player').catch((err) => setMessage(err.message, true)); });
   $('profile-form').addEventListener('submit', (e) => { e.preventDefault(); saveProfile(e.currentTarget).catch((err) => setMessage(err.message, true)); });

@@ -64,6 +64,7 @@ assert(backend.includes('startPhaseTicker') && backend.includes('scheduleAtFixed
 assert(backend.includes('lastDoctorTarget') && backend.includes('sheriffResultTargetName'), 'player payload must include action guidance context');
 assert(backend.includes('sheriffTargetCurrent') && backend.includes('doctorProtectCurrent') && backend.includes('vigilanteTargetCurrent'), 'player payload must preserve submitted action choices');
 assert(backend.includes('!Objects.equals(previous, stored)') && backend.includes('!target.equals(previous)'), 'unchanged repeated votes must not duplicate system messages');
+assert(backend.includes('boolean manager = canManageGame(account)') && backend.includes('manager ? chatPayload(STATE.mafiaChat) : List.of()'), 'GM state must hide private console data from non-managers');
 assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
 assert(backend.includes('Another room is active'), 'room switching must be blocked while a table is in progress');
 assert(backend.includes('"/api/my-player"') && backend.includes('findPlayerByAccount(account.id)'), 'server must expose account-based player seat recovery');
@@ -73,6 +74,7 @@ assert(html.includes('admin-create-user-form'), 'admin create-user form must exi
 assert(html.includes('action-panel-shell') && html.includes('table-panel'), 'play screen must expose dedicated action/table layout regions');
 assert(html.includes('gm-phase-guide') && html.includes('player-phase-guide'), 'GM and player screens must expose phase guidance regions');
 assert(html.includes('gm-setup-panel') && html.includes('gm-timer-panel') && html.includes('gm-console-panel'), 'Host screen must separate setup, timers, and GM console regions');
+assert(html.includes('deal-stage') && html.includes('role-symbol'), 'Night 0 role reveal must include the animated deal stage and role symbol slot');
 assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText'), 'invite copy action must be wired');
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
 assert(app.includes('target-tile') && app.includes('data-target-id') && !app.includes('function actionSelect'), 'player actions must use clickable target tiles instead of dropdown selects');
@@ -83,10 +85,16 @@ assert(app.includes('life-badge'), 'player list must use explicit alive/dead sta
 assert(app.includes('gmGuidanceMarkup') && app.includes('playerGuidanceMarkup') && app.includes('Vote submitted'), 'GM and player phase guidance must be wired');
 assert(app.includes("gm.phase === 'lobby' || gm.phase === 'game_over'") && app.includes('gmConsoleMarkup') && !app.includes("'gm-action-status').textContent = JSON.stringify"), 'GM active-round feed must be rendered as UI instead of raw JSON');
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
+assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
+assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
+assert(app.includes('roleIcon') && app.includes("kind === 'Sheriff'") && app.includes("kind === 'Vigilante'"), 'role symbols must cover the supported role set');
+assert(html.includes('role="button"') && app.includes('toggleRolePeek') && app.includes('roleCardKeydown'), 'role card peek toggle must be clickable and keyboard accessible');
+assert(app.includes('role-mini-icon') && app.includes('Vigilante shots'), 'setup role controls must show role symbols and vigilante ammunition setup');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
 assert(read('src/main/resources/public/styles.css').includes('grid-template-areas') && read('src/main/resources/public/styles.css').includes('@media (orientation: portrait)'), 'play layout must keep separate landscape and portrait rules');
+assert(read('src/main/resources/public/styles.css').includes('@keyframes dealShuffle') && read('src/main/resources/public/styles.css').includes('prefers-reduced-motion'), 'role deal animation must include reduced-motion support');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

@@ -937,6 +937,7 @@ public class Main {
     }
 
     private static Map<String, Object> gmStatePayload(Account account) {
+        boolean manager = canManageGame(account);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("phase", STATE.phase);
         payload.put("round", STATE.round);
@@ -948,7 +949,7 @@ public class Main {
             row.put("accountId", p.accountId);
             row.put("name", p.name);
             row.put("alive", p.alive);
-            row.put("role", p.role);
+            row.put("role", manager ? p.role : (p.alive ? null : p.role));
             Account a = DB.findAccount(p.accountId);
             row.put("avatarDataUrl", a == null ? "" : a.avatarDataUrl);
             return row;
@@ -962,15 +963,15 @@ public class Main {
         payload.put("finalStatements", STATE.finalStatements);
         payload.put("finalStatementPending", Math.max(0, STATE.finalStatementPlayerIds.size() - STATE.finalStatements.size()));
         payload.put("winner", STATE.winner);
-        payload.put("lastSheriffResult", STATE.lastSheriffResult);
-        payload.put("mafiaVoteTally", tally(STATE.mafiaVotes));
-        payload.put("dayVoteTally", tally(STATE.dayVotes));
-        payload.put("pendingMafiaVotes", Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()));
-        payload.put("pendingDayVotes", Math.max(0, aliveCount() - STATE.dayVotes.size()));
+        payload.put("lastSheriffResult", manager ? STATE.lastSheriffResult : "");
+        payload.put("mafiaVoteTally", manager ? tally(STATE.mafiaVotes) : Map.of());
+        payload.put("dayVoteTally", manager || STATE.publicDayVoteTally ? tally(STATE.dayVotes) : Map.of());
+        payload.put("pendingMafiaVotes", manager ? Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size()) : 0);
+        payload.put("pendingDayVotes", manager ? Math.max(0, aliveCount() - STATE.dayVotes.size()) : 0);
         payload.put("publicDayVoteTally", STATE.publicDayVoteTally);
-        payload.put("mafiaChat", chatPayload(STATE.mafiaChat));
-        payload.put("playerChat", chatPayload(STATE.playerChat));
-        payload.put("canManage", canManageGame(account));
+        payload.put("mafiaChat", manager ? chatPayload(STATE.mafiaChat) : List.of());
+        payload.put("playerChat", manager ? chatPayload(STATE.playerChat) : List.of());
+        payload.put("canManage", manager);
         payload.put("room", roomPayload(DB.defaultRoom()));
         return payload;
     }
