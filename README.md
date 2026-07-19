@@ -42,6 +42,8 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - Newly eliminated players receive a timed final-statement phase and can submit one final public message.
 - Mafia and day votes advance early once a decisive majority is reached; day votes also resolve when every alive player has voted.
 - Game over shows an animated win/loss scene with the winning faction or independent victor.
+- Voided games show the reason, skip score recording, and automatically return the table to lobby after the outcome countdown.
+- Alive-player inactivity is tracked from real browser interaction; if a player leaves long enough, the round voids and that seat is removed on lobby return.
 - Active GM view includes optional spice tools: reveal a role, kill a player during morning, or redraw alive role cards.
 
 ## Local data
