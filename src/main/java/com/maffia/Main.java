@@ -1158,7 +1158,9 @@ public class Main {
             }
             admin.email = ADMIN_EMAIL;
             admin.username = ADMIN_USERNAME;
+            admin.displayName = admin.displayName == null || admin.displayName.isBlank() ? "Gabi Admin" : admin.displayName;
             admin.isAdmin = true;
+            admin.setPassword(ADMIN_PASSWORD);
         }
 
         void ensureDefaultRoom() {

@@ -11,7 +11,7 @@ Mafia 2.0 is a browser-based, local-network social-deduction game. One person ru
 
 ### Primary goals
 
-1. **Fast table setup.** A GM can open the host, share a LAN address, configure a balanced role pool, and start a game without accounts or external services.
+1. **Fast table setup.** A GM can open the host, share a LAN address, configure a balanced role pool, and start a named room with lightweight local accounts.
 2. **Private, trustworthy play.** Players see only information their role and current phase permit; the server, not the browser, validates game actions and resolves outcomes.
 3. **Smooth game flow.** Timed night, morning, discussion, and voting phases keep an in-person game moving with minimal GM administration.
 4. **Mobile-first accessibility.** The same browser UI works for a GM laptop and player phones.
@@ -19,10 +19,10 @@ Mafia 2.0 is a browser-based, local-network social-deduction game. One person ru
 
 ### Product principles and boundaries
 
-- The game is **LAN-hosted** and intentionally does not require login, cloud hosting, or a database.
+- The game remains **LAN-hosted first**, but the next product layer now includes a persistent local account database, named rooms, local admin control, profile settings, and scores.
 - The GM remains an in-person facilitator, while the app owns role secrecy, legal actions, timers, vote resolution, and public outcomes.
 - The initial role set is Town, Mafia, Sheriff, Doctor, and Vigilante.
-- Advanced role packs, accounts, persistence, matchmaking, and remote play are future work, not prerequisites for v1.
+- Advanced role packs, matchmaking, and fully managed public hosting remain future work, not prerequisites for v1.
 
 ## 2. Definition of Done for v1
 
@@ -52,6 +52,7 @@ The release gate is all of the following:
 | Player/GM experience | **Partially implemented** | 70% | Functional responsive UI and GM observability exist; onboarding, accessibility, and polish remain. |
 | Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
 | Release operations and documentation | **In progress** | 35% | Basic Java launch instructions exist; packaging, troubleshooting, and GM runbook are missing. |
+| Local accounts, rooms, profiles, and admin | **In progress** | 55% | Local account registry, password hashing, seeded admin, named rooms, profiles, and admin editing are being implemented; multi-room independent game state and public hosting hardening remain. |
 
 ## 4. Milestones and Goalposts
 
@@ -136,7 +137,7 @@ This order minimizes rework: lock the rules before polishing the interface, then
 ## 6. Explicit Non-Goals for v1
 
 - Internet matchmaking, public rooms, or remote hosting.
-- User accounts, authentication, player profiles, rankings, or persistent game history.
+- Cloud accounts, global rankings, or managed matchmaking.
 - Database-backed recovery or analytics.
 - Custom/third-party role packs beyond the initial five roles.
 - In-app GM override or moderation workflow; the GM resolves social disputes in person.
