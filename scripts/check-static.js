@@ -35,6 +35,8 @@ assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKD
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount())'), 'day vote resolution must use strict majority');
 assert(backend.includes('payload.put("mafiaTeam"'), 'mafia teammate identities must be in private mafia payload');
 assert(backend.includes('PUBLIC_CHAT_PHASES'), 'public chat phase restrictions must be server-side');
+assert(backend.includes('activeRoomId'), 'local database must track the active hosted room');
+assert(backend.includes('Another room is active'), 'room switching must be blocked while a table is in progress');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

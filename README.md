@@ -22,7 +22,7 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - Persistent local account registry with email/username login.
 - Seeded local admin account: `gabi17hun@gmail.com` / `n0n4m3-admin` with password `admin123`.
 - Browser admin screen for editing the local player base, scores, usernames, emails, and passwords.
-- Named room list with local LAN and internet-ready room modes.
+- Named room list with local LAN and internet-ready room modes; one room is the active hosted table at a time.
 - Profile settings with display-name changes, score history, and max 100x100 profile image uploads.
 - GM-hosted room lobby in browser.
 - Players join from their authenticated account.
@@ -38,6 +38,10 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 The host stores accounts, room metadata, sessions, profile images, and scores in `data/mafia-db.json`.
 Passwords are not stored in plaintext; they are salted and hashed with PBKDF2-HMAC-SHA256.
 Keep the `data/` folder local and out of git.
+
+## Room hosting model
+
+The current host runs one active game table at a time. Creating a named room makes it the active table when no lobby/game is in progress. Players can join the active room locally through the LAN URL, or through the configured public URL when the host is placed behind a secure HTTPS tunnel or reverse proxy.
 
 ## Current Spec Drafts
 

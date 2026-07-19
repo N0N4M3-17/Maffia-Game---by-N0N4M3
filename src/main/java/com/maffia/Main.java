@@ -263,6 +263,10 @@ public class Main {
             if ("POST".equals(method) && "/api/rooms".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
+                if (!STATE.players.isEmpty() && !"game_over".equals(STATE.phase)) {
+                    writeJson(ex, 409, Map.of("error", "Reset or finish the active room before creating a new hosted table."));
+                    return;
+                }
                 JsonObject b = readBodyJson(ex);
                 String name = text(b, "name");
                 String mode = text(b, "networkMode");
@@ -272,6 +276,8 @@ public class Main {
                 }
                 Room room = Room.create(name, account.id, mode.isBlank() ? "local" : mode);
                 DB.data.rooms.add(room);
+                DB.data.activeRoomId = room.id;
+                STATE.reset();
                 DB.save();
                 writeJson(ex, 201, Map.of("room", roomPayload(room)));
                 return;
@@ -285,6 +291,15 @@ public class Main {
                 if (room == null) {
                     writeJson(ex, 404, Map.of("error", "Room not found."));
                     return;
+                }
+                Room active = DB.defaultRoom();
+                if (active != null && !active.id.equals(room.id)) {
+                    if (!STATE.players.isEmpty() && !"game_over".equals(STATE.phase)) {
+                        writeJson(ex, 409, Map.of("error", "Another room is active. Ask the host to reset before switching rooms."));
+                        return;
+                    }
+                    DB.data.activeRoomId = room.id;
+                    STATE.reset();
                 }
                 if (!"lobby".equals(STATE.phase) && STATE.players.stream().noneMatch(p -> account.id.equals(p.accountId))) {
                     writeJson(ex, 409, Map.of("error", "Game already started."));
@@ -892,6 +907,7 @@ public class Main {
                 "name", r.name,
                 "networkMode", r.networkMode,
                 "hostAccountId", r.hostAccountId,
+                "active", r.id.equals(DB.data.activeRoomId),
                 "createdAt", r.createdAt,
                 "lastActiveAt", r.lastActiveAt
         );
@@ -1146,6 +1162,9 @@ public class Main {
                     if (data.accounts == null) data.accounts = new ArrayList<>();
                     if (data.rooms == null) data.rooms = new ArrayList<>();
                     if (data.sessions == null) data.sessions = new HashMap<>();
+                    if (data.activeRoomId == null || data.activeRoomId.isBlank()) {
+                        data.activeRoomId = data.rooms.isEmpty() ? "" : data.rooms.get(0).id;
+                    }
                 }
             } catch (Exception err) {
                 throw new IllegalStateException("Could not load local database.", err);
@@ -1178,13 +1197,18 @@ public class Main {
         void ensureDefaultRoom() {
             if (data.rooms.isEmpty()) {
                 Account admin = findAccountByLogin(ADMIN_USERNAME);
-                data.rooms.add(Room.create("Table One", admin == null ? "" : admin.id, "local"));
+                Room room = Room.create("Table One", admin == null ? "" : admin.id, "local");
+                data.rooms.add(room);
+                data.activeRoomId = room.id;
+            } else if (data.activeRoomId == null || findRoom(data.activeRoomId) == null) {
+                data.activeRoomId = data.rooms.get(0).id;
             }
         }
 
         Room defaultRoom() {
             ensureDefaultRoom();
-            return data.rooms.get(0);
+            Room active = findRoom(data.activeRoomId);
+            return active == null ? data.rooms.get(0) : active;
         }
 
         Account findAccount(String id) {
@@ -1214,6 +1238,7 @@ public class Main {
         List<Account> accounts = new ArrayList<>();
         List<Room> rooms = new ArrayList<>();
         Map<String, Session> sessions = new HashMap<>();
+        String activeRoomId = "";
     }
 
     private static final class Account {

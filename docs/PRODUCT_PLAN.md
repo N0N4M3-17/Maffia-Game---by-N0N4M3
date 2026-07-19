@@ -52,7 +52,7 @@ The release gate is all of the following:
 | Player/GM experience | **Partially implemented** | 70% | Functional responsive UI and GM observability exist; onboarding, accessibility, and polish remain. |
 | Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
 | Release operations and documentation | **In progress** | 35% | Basic Java launch instructions exist; packaging, troubleshooting, and GM runbook are missing. |
-| Local accounts, rooms, profiles, and admin | **In progress** | 55% | Local account registry, password hashing, seeded admin, named rooms, profiles, and admin editing are being implemented; multi-room independent game state and public hosting hardening remain. |
+| Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
 
 ## 4. Milestones and Goalposts
 

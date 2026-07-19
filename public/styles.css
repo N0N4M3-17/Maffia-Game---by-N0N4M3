@@ -370,6 +370,19 @@ code {
   display: block;
 }
 
+.room-row em {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(89, 194, 137, .16);
+  color: var(--green);
+  font-size: 12px;
+  font-style: normal;
+}
+
 .share-box {
   margin-top: 16px;
   display: grid;

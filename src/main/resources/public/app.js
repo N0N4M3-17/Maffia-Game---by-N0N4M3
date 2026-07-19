@@ -176,7 +176,7 @@ function renderRooms() {
   list.innerHTML = state.rooms.map((room) => `
     <article class="room-row">
       <div>
-        <strong>${escapeHtml(room.name)}</strong>
+        <strong>${escapeHtml(room.name)}${room.active ? ' <em>Active</em>' : ''}</strong>
         <span>${room.networkMode === 'internet' ? 'Internet-ready' : 'Local LAN'}</span>
       </div>
       <button class="secondary-button" data-room-join="${room.id}">Join</button>
