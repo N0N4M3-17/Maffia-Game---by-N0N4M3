@@ -98,6 +98,8 @@ Treat the browser experience like five Unity-style scenes:
 - [x] Day voting supports target selection or abstention, resolution, role reveal, and a configurable public vote log.
 - [x] Win checks declare Town when no Mafia remain, Mafia when alive Mafia are at least the alive town-aligned count, Jester when voted out by day vote, and Vigilante when morning begins with only one Mafia and an armed Vigilante alive.
 - [x] Game over gives players an animated victory/loss scene with the winning faction or independent victor.
+- [x] Voided games show the void reason, skip score recording, and automatically return to lobby after the outcome screen.
+- [x] Live player inactivity voids the round after twice the longest configured phase timer, then removes that player on lobby return.
 - [x] GM command scene supports optional role reveal, morning kill, and alive-card redraw tools.
 - [x] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
 - [ ] Verify all role, tie, abstention, protection, and timer edge cases against executable tests.

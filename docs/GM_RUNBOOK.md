@@ -87,6 +87,10 @@ The server owns timers, legal actions, private information, and phase transition
 
 The GM can manually advance the phase when needed.
 
+Game over and voided games stay on an outcome screen briefly, then return to the lobby automatically. The lobby return keeps seated players unless the round was voided because a live player left or timed out; that player's seat is removed before the next setup.
+
+Alive-player inactivity is based on real browser interaction, not the background polling loop. The timeout is twice the longest configured phase timer, with a 30-second minimum. For example, if Discussion is 400 seconds and every other phase is 200 seconds or less, each live player has 800 seconds without interaction before the round is voided.
+
 ### GM spice tools
 
 Open the **Game Master** control in the active command scene to use optional table interventions:
@@ -94,6 +98,7 @@ Open the **Game Master** control in the active command scene to use optional tab
 - Reveal role: publicly reveal one seated player's role.
 - Kill in morning: eliminate one alive player during the morning phase.
 - Redraw alive cards: reshuffle only living players' current roles during the morning phase; dead players remain dead and keep their cards.
+- Void game: sends everyone to a no-score outcome screen with the void reason, then returns to lobby automatically.
 
 ## 8. Scores
 
@@ -104,6 +109,7 @@ When the game reaches game over, scores are recorded to local player profiles:
 - A lynched Jester wins alone on a Jester victory.
 - Vigilante wins on the special armed morning duel victory.
 - All players see an animated game-over scene with the winning faction or independent victor.
+- Voided games show the reason and record no scores.
 - Games, wins, and losses persist in `data/mafia-db.json`.
 
 ## 9. Troubleshooting

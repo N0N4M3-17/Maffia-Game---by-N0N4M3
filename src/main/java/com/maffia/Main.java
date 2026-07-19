@@ -53,6 +53,7 @@ public class Main {
     private static final String ADMIN_USERNAME = "n0n4m3-admin";
     private static final String ADMIN_PASSWORD = "admin123";
     private static final long ACTION_RESULT_HOLD_MS = 4500L;
+    private static final int MIN_ACTIVITY_TIMEOUT_SEC = 30;
 
     public static void main(String[] args) throws IOException {
         synchronized (LOCK) {
@@ -145,6 +146,12 @@ public class Main {
 
             if ("POST".equals(method) && "/api/auth/logout".equals(path)) {
                 String token = sessionToken(ex);
+                Session session = token == null ? null : DB.data.sessions.get(token);
+                Account account = session == null ? null : DB.findAccount(session.accountId);
+                Player player = account == null ? null : findPlayerByAccount(account.id);
+                if (shouldVoidForDepartingPlayer(player)) {
+                    voidGame(player.name + " signed out during the game.", player.id);
+                }
                 if (token != null) DB.data.sessions.remove(token);
                 DB.save();
                 clearSessionCookie(ex);
@@ -297,9 +304,17 @@ public class Main {
                     writeJson(ex, 400, Map.of("error", "At least one admin account must remain."));
                     return;
                 }
+                Player departing = findPlayerByAccount(id);
+                if (shouldVoidForDepartingPlayer(departing)) {
+                    voidGame(departing.name + " was removed from the player base during the game.", departing.id);
+                }
                 boolean removed = DB.data.accounts.removeIf(a -> a.id.equals(id));
                 DB.data.sessions.entrySet().removeIf(e -> e.getValue().accountId.equals(id));
-                STATE.players.removeIf(p -> id.equals(p.accountId));
+                if ("game_over".equals(STATE.phase) && departing != null) {
+                    if (!STATE.playerIdsToRemoveOnLobbyReturn.contains(departing.id)) STATE.playerIdsToRemoveOnLobbyReturn.add(departing.id);
+                } else {
+                    STATE.players.removeIf(p -> id.equals(p.accountId));
+                }
                 DB.save();
                 writeJson(ex, removed ? 200 : 404, removed ? Map.of("ok", true) : Map.of("error", "User not found."));
                 return;
@@ -365,6 +380,7 @@ public class Main {
                     STATE.players.add(existing);
                 }
                 existing.roomId = room.id;
+                markPlayerInteraction(existing);
                 room.lastActiveAt = Instant.now().toString();
                 DB.save();
                 writeJson(ex, 200, Map.of("playerId", existing.id, "room", roomPayload(room)));
@@ -400,6 +416,7 @@ public class Main {
                 Room room = DB.defaultRoom();
                 Player existing = findPlayerByAccount(account.id);
                 if (existing != null) {
+                    markPlayerInteraction(existing);
                     writeJson(ex, 200, Map.of("playerId", existing.id));
                     return;
                 }
@@ -412,6 +429,7 @@ public class Main {
                 Player p = new Player(id, account.id, account.displayName);
                 p.roomId = room.id;
                 STATE.players.add(p);
+                markPlayerInteraction(p);
                 writeJson(ex, 201, Map.of("playerId", p.id));
                 return;
             }
@@ -426,6 +444,14 @@ public class Main {
                     return;
                 }
                 writeJson(ex, 200, playerStatePayload(p, account));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/player/heartbeat".equals(path)) {
+                JsonObject b = readBodyJson(ex);
+                Player player = requireSessionPlayer(ex, b);
+                if (player == null) return;
+                writeJson(ex, 200, Map.of("ok", true, "interactionTimeoutSec", playerActivityTimeoutSec()));
                 return;
             }
 
@@ -532,12 +558,7 @@ public class Main {
                     writeJson(ex, 400, Map.of("error", "No active game to void."));
                     return;
                 }
-                STATE.phase = "game_over";
-                STATE.winner = "Voided";
-                STATE.winningPlayerId = null;
-                STATE.phaseEndsAt = 0L;
-                STATE.scoresRecorded = true;
-                pushPlayerChat("SYSTEM", "The GM voided this game. No scores were recorded.");
+                voidGame("The GM voided the game.", null);
                 writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase, "winner", STATE.winner));
                 return;
             }
@@ -820,6 +841,7 @@ public class Main {
         }
 
         Collections.shuffle(pool);
+        long now = System.currentTimeMillis();
         for (int i = 0; i < STATE.players.size(); i++) {
             Player p = STATE.players.get(i);
             p.role = pool.get(i);
@@ -828,11 +850,15 @@ public class Main {
             p.lastSheriffResult = null;
             p.lastSheriffTargetName = null;
             p.vigilanteShotsRemaining = "Vigilante".equals(p.role) ? STATE.config.vigilanteShots : 0;
+            p.lastInteractionAtMs = now;
         }
 
         STATE.round = 0;
         STATE.winner = null;
         STATE.winningPlayerId = null;
+        STATE.voidReason = "";
+        STATE.autoReturnToLobbyAt = 0L;
+        STATE.playerIdsToRemoveOnLobbyReturn = new ArrayList<>();
         STATE.scoresRecorded = false;
         STATE.revealedPlayerIds = new ArrayList<>();
         setPhase("night0");
@@ -971,8 +997,24 @@ public class Main {
         STATE.phase = "game_over";
         STATE.winner = winner;
         STATE.winningPlayerId = winningPlayerId;
+        STATE.voidReason = "";
         STATE.phaseEndsAt = 0;
+        scheduleAutoReturnToLobby();
         recordScores(winner);
+    }
+
+    private static void voidGame(String reason, String departingPlayerId) {
+        STATE.phase = "game_over";
+        STATE.winner = "Voided";
+        STATE.winningPlayerId = null;
+        STATE.voidReason = reason == null || reason.isBlank() ? "The game was voided." : reason;
+        STATE.phaseEndsAt = 0L;
+        STATE.scoresRecorded = true;
+        if (departingPlayerId != null && !departingPlayerId.isBlank() && !STATE.playerIdsToRemoveOnLobbyReturn.contains(departingPlayerId)) {
+            STATE.playerIdsToRemoveOnLobbyReturn.add(departingPlayerId);
+        }
+        pushPlayerChat("SYSTEM", "Game voided: " + STATE.voidReason + " No scores were recorded.");
+        scheduleAutoReturnToLobby();
     }
 
     private static void recordScores(String winner) {
@@ -1023,6 +1065,10 @@ public class Main {
         return p == null ? "" : p.name;
     }
 
+    private static void markPlayerInteraction(Player p) {
+        if (p != null) p.lastInteractionAtMs = System.currentTimeMillis();
+    }
+
     private static Account requireAccount(HttpExchange ex) throws IOException {
         String token = sessionToken(ex);
         Session session = token == null ? null : DB.data.sessions.get(token);
@@ -1054,6 +1100,7 @@ public class Main {
             writeJson(ex, 403, Map.of("error", "Player session mismatch."));
             return null;
         }
+        markPlayerInteraction(p);
         return p;
     }
 
@@ -1086,11 +1133,56 @@ public class Main {
     }
 
     private static void tickPhaseTransitions() {
+        long now = System.currentTimeMillis();
+        if ("game_over".equals(STATE.phase)) {
+            if (STATE.autoReturnToLobbyAt > 0 && now >= STATE.autoReturnToLobbyAt) {
+                STATE.returnToLobbyKeepingSeats();
+            }
+            return;
+        }
+        if (activeGameInProgress()) {
+            Player inactive = firstInactivePlayer(now);
+            if (inactive != null) {
+                int timeout = playerActivityTimeoutSec();
+                voidGame(inactive.name + " left the game after " + timeout + " seconds without interaction.", inactive.id);
+                return;
+            }
+        }
         int guard = 0;
-        while (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.phaseEndsAt > 0 && System.currentTimeMillis() >= STATE.phaseEndsAt && guard < 8) {
+        while (!"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase) && STATE.phaseEndsAt > 0 && now >= STATE.phaseEndsAt && guard < 8) {
             nextPhaseInternal();
             guard += 1;
         }
+    }
+
+    private static boolean activeGameInProgress() {
+        return !"lobby".equals(STATE.phase) && !"game_over".equals(STATE.phase);
+    }
+
+    private static boolean shouldVoidForDepartingPlayer(Player player) {
+        return player != null && player.role != null && player.alive && activeGameInProgress();
+    }
+
+    private static Player firstInactivePlayer(long now) {
+        long timeoutMs = playerActivityTimeoutSec() * 1000L;
+        return STATE.players.stream()
+                .filter(p -> p.role != null)
+                .filter(p -> p.alive)
+                .filter(p -> now - p.lastInteractionAtMs >= timeoutMs)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static int playerActivityTimeoutSec() {
+        return Math.max(MIN_ACTIVITY_TIMEOUT_SEC, maxPhaseDurationSec() * 2);
+    }
+
+    private static int maxPhaseDurationSec() {
+        return Math.max(1, Collections.max(STATE.timerSettings.toMap().values()));
+    }
+
+    private static void scheduleAutoReturnToLobby() {
+        STATE.autoReturnToLobbyAt = System.currentTimeMillis() + (playerActivityTimeoutSec() * 1000L);
     }
 
     private static int phaseDurationSec(String phase) {
@@ -1132,6 +1224,8 @@ public class Main {
         payload.put("round", STATE.round);
         payload.put("nightStep", STATE.nightStep);
         payload.put("phaseRemainingSec", phaseRemainingSec());
+        payload.put("autoReturnRemainingSec", autoReturnRemainingSec());
+        payload.put("interactionTimeoutSec", playerActivityTimeoutSec());
         payload.put("players", STATE.players.stream().map(p -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", p.id);
@@ -1154,6 +1248,7 @@ public class Main {
         payload.put("winner", STATE.winner);
         payload.put("winningPlayerId", STATE.winningPlayerId);
         payload.put("winningPlayerName", winnerPlayerName());
+        payload.put("voidReason", STATE.voidReason);
         payload.put("lastSheriffResult", manager ? STATE.lastSheriffResult : "");
         payload.put("mafiaVoteTally", manager ? tally(STATE.mafiaVotes) : Map.of());
         payload.put("dayVoteTally", manager || STATE.publicDayVoteTally ? tally(STATE.dayVotes) : Map.of());
@@ -1183,6 +1278,8 @@ public class Main {
         payload.put("round", STATE.round);
         payload.put("alive", p.alive);
         payload.put("phaseRemainingSec", phaseRemainingSec());
+        payload.put("autoReturnRemainingSec", autoReturnRemainingSec());
+        payload.put("interactionTimeoutSec", playerActivityTimeoutSec());
         payload.put("role", "lobby".equals(STATE.phase) ? null : p.role);
         payload.put("roleDescription", roleDescription(p.role));
         payload.put("vigilanteShotsRemaining", vigilante ? p.vigilanteShotsRemaining : 0);
@@ -1229,6 +1326,7 @@ public class Main {
         payload.put("winner", STATE.winner);
         payload.put("winningPlayerId", STATE.winningPlayerId);
         payload.put("winningPlayerName", winnerPlayerName());
+        payload.put("voidReason", STATE.voidReason);
         payload.put("mafiaVoteCurrent", mafia ? STATE.mafiaVotes.get(p.id) : null);
         payload.put("sheriffTargetCurrent", sheriff ? STATE.sheriffTarget : null);
         payload.put("doctorProtectCurrent", doctor ? STATE.doctorTarget : null);
@@ -1410,6 +1508,11 @@ public class Main {
     private static long phaseRemainingSec() {
         if (STATE.phaseEndsAt <= 0) return 0;
         return Math.max(0, (STATE.phaseEndsAt - System.currentTimeMillis()) / 1000);
+    }
+
+    private static long autoReturnRemainingSec() {
+        if (STATE.autoReturnToLobbyAt <= 0) return 0;
+        return Math.max(0, (STATE.autoReturnToLobbyAt - System.currentTimeMillis()) / 1000);
     }
 
     private static Map<String, Integer> tally(Map<String, String> votes) {
@@ -1735,10 +1838,12 @@ public class Main {
         int round = 0;
         String winner = null;
         String winningPlayerId = null;
+        String voidReason = "";
         String lastSheriffResult = null;
         String actionNoticeTitle = null;
         String actionNoticeBody = null;
         long phaseEndsAt = 0L;
+        long autoReturnToLobbyAt = 0L;
         boolean scoresRecorded = false;
 
         List<Player> players = new ArrayList<>();
@@ -1756,6 +1861,7 @@ public class Main {
         List<String> finalStatementPlayerIds = new ArrayList<>();
         Map<String, String> finalStatements = new LinkedHashMap<>();
         List<String> revealedPlayerIds = new ArrayList<>();
+        List<String> playerIdsToRemoveOnLobbyReturn = new ArrayList<>();
         String afterFinalStatementsPhase = "discussion";
         List<ChatMessage> mafiaChat = new ArrayList<>();
         List<ChatMessage> playerChat = new ArrayList<>();
@@ -1767,10 +1873,12 @@ public class Main {
             round = 0;
             winner = null;
             winningPlayerId = null;
+            voidReason = "";
             lastSheriffResult = null;
             actionNoticeTitle = null;
             actionNoticeBody = null;
             phaseEndsAt = 0L;
+            autoReturnToLobbyAt = 0L;
             scoresRecorded = false;
             players = new ArrayList<>();
             config = new RoleConfig(2, 1, 1, 0, 0, 1, 1);
@@ -1785,6 +1893,7 @@ public class Main {
             finalStatementPlayerIds = new ArrayList<>();
             finalStatements = new LinkedHashMap<>();
             revealedPlayerIds = new ArrayList<>();
+            playerIdsToRemoveOnLobbyReturn = new ArrayList<>();
             afterFinalStatementsPhase = "discussion";
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
@@ -1797,10 +1906,12 @@ public class Main {
             round = 0;
             winner = null;
             winningPlayerId = null;
+            voidReason = "";
             lastSheriffResult = null;
             actionNoticeTitle = null;
             actionNoticeBody = null;
             phaseEndsAt = 0L;
+            autoReturnToLobbyAt = 0L;
             scoresRecorded = false;
             mafiaVotes = new HashMap<>();
             sheriffTarget = null;
@@ -1812,9 +1923,14 @@ public class Main {
             finalStatementPlayerIds = new ArrayList<>();
             finalStatements = new LinkedHashMap<>();
             revealedPlayerIds = new ArrayList<>();
+            if (!playerIdsToRemoveOnLobbyReturn.isEmpty()) {
+                players.removeIf(p -> playerIdsToRemoveOnLobbyReturn.contains(p.id));
+            }
+            playerIdsToRemoveOnLobbyReturn = new ArrayList<>();
             afterFinalStatementsPhase = "discussion";
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
+            long now = System.currentTimeMillis();
             for (Player p : players) {
                 p.role = null;
                 p.alive = true;
@@ -1822,6 +1938,7 @@ public class Main {
                 p.lastSheriffResult = null;
                 p.lastSheriffTargetName = null;
                 p.vigilanteShotsRemaining = 0;
+                p.lastInteractionAtMs = now;
             }
         }
     }
@@ -1878,6 +1995,7 @@ public class Main {
         String lastSheriffResult;
         String lastSheriffTargetName;
         int vigilanteShotsRemaining;
+        long lastInteractionAtMs;
         Player(String id, String accountId, String name) {
             this.id = id;
             this.accountId = accountId;
@@ -1888,6 +2006,7 @@ public class Main {
             this.lastSheriffResult = null;
             this.lastSheriffTargetName = null;
             this.vigilanteShotsRemaining = 0;
+            this.lastInteractionAtMs = System.currentTimeMillis();
         }
     }
 

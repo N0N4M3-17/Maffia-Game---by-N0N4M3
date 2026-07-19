@@ -18,6 +18,8 @@ const state = {
   lastGmConsoleRenderKey: '',
   lastDeadOverviewRenderKey: '',
   gmToolsOpen: false,
+  activityDirty: false,
+  lastHeartbeatAt: 0,
 };
 
 const roleLabels = {
@@ -92,14 +94,37 @@ function fmtSec(s) {
 }
 
 function sceneRenderKey(value) {
-  return JSON.stringify(value, (key, item) => key === 'phaseRemainingSec' ? undefined : item);
+  return JSON.stringify(value, (key, item) => (key === 'phaseRemainingSec' || key === 'autoReturnRemainingSec') ? undefined : item);
 }
 
-function updateSceneTimers(root, seconds) {
+function updateSceneTimers(root, seconds, autoReturnSeconds = 0) {
   if (!root) return;
   root.querySelectorAll('[data-phase-timer]').forEach((el) => {
     el.textContent = `${fmtSec(seconds || 0)} remaining`;
   });
+  root.querySelectorAll('[data-auto-return-timer]').forEach((el) => {
+    el.textContent = `Returning to lobby in ${fmtSec(autoReturnSeconds || 0)}`;
+  });
+}
+
+function notePlayerInteraction() {
+  if (!state.account || !state.playerId) return;
+  state.activityDirty = true;
+  sendActivityHeartbeat().catch(() => {});
+}
+
+async function sendActivityHeartbeat(force = false) {
+  if (!state.account || !state.playerId) return;
+  const now = Date.now();
+  if (!force && (!state.activityDirty || now - state.lastHeartbeatAt < 10000)) return;
+  state.activityDirty = false;
+  state.lastHeartbeatAt = now;
+  try {
+    await api('/api/player/heartbeat', { method: 'POST', body: JSON.stringify({ playerId: state.playerId }) });
+  } catch (err) {
+    state.activityDirty = true;
+    throw err;
+  }
 }
 
 function showApp(authenticated) {
@@ -162,6 +187,8 @@ async function logout() {
   await api('/api/auth/logout', { method: 'POST', body: '{}' });
   state.account = null;
   state.playerId = null;
+  state.activityDirty = false;
+  state.lastHeartbeatAt = 0;
   localStorage.removeItem('playerId');
   showApp(false);
   stopPolling();
@@ -179,6 +206,8 @@ async function recoverPlayerSeat() {
     if (seat.joined && seat.playerId) {
       state.playerId = seat.playerId;
       localStorage.setItem('playerId', seat.playerId);
+      state.activityDirty = true;
+      sendActivityHeartbeat(true).catch(() => {});
       return true;
     }
   } catch {
@@ -232,6 +261,8 @@ async function joinRoom(roomId) {
   const data = await api(`/api/rooms/${roomId}/join`, { method: 'POST', body: '{}' });
   state.playerId = data.playerId;
   localStorage.setItem('playerId', data.playerId);
+  state.activityDirty = true;
+  await sendActivityHeartbeat(true);
   showTab('play');
   await refreshAll();
   setMessage(`Joined ${data.room?.name || 'room'}.`);
@@ -442,7 +473,7 @@ async function refreshGm() {
     $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
     bindGmConsoleActions();
   }
-  updateSceneTimers($('gm-action-status'), gm.phaseRemainingSec || 0);
+  updateSceneTimers($('gm-action-status'), gm.phaseRemainingSec || 0, gm.autoReturnRemainingSec || 0);
 }
 
 function bindGmConsoleActions() {
@@ -521,7 +552,7 @@ function gmPlayerCard(player) {
 }
 
 function winnerDisplayName(stateLike) {
-  if (stateLike.winner === 'Voided') return 'Voided by GM';
+  if (stateLike.winner === 'Voided') return stateLike.voidReason || 'Voided game';
   const name = stateLike.winningPlayerName || '';
   return name ? `${stateLike.winner} (${name})` : (stateLike.winner || 'Unknown');
 }
@@ -542,13 +573,14 @@ function playerWonGame(ps) {
 function gameOverSceneMarkup(stateLike, options = {}) {
   if (stateLike.phase !== 'game_over') return '';
   const winner = stateLike.winner || 'Unknown';
-  const personal = options.personal ? playerWonGame(stateLike) : null;
+  const personal = winner === 'Voided' ? null : (options.personal ? playerWonGame(stateLike) : null);
   const title = winner === 'Voided'
     ? 'Game voided'
     : (personal === null ? `${winner} victory` : (personal ? 'You won' : 'You lost'));
   const subtitle = winner === 'Voided'
-    ? 'No scores were recorded.'
+    ? (stateLike.voidReason || 'No scores were recorded.')
     : `Winner: ${winnerDisplayName(stateLike)}`;
+  const autoReturn = Number(stateLike.autoReturnRemainingSec || 0);
   const role = winner === 'Voided' ? 'Hidden' : winner;
   const roleClass = winner === 'Voided' ? 'neutral' : String(role).toLowerCase();
   return `
@@ -562,6 +594,7 @@ function gameOverSceneMarkup(stateLike, options = {}) {
         <p class="eyebrow">Game over</p>
         <h3>${escapeHtml(title)}</h3>
         <p>${escapeHtml(subtitle)}</p>
+        <p class="auto-return-copy" data-auto-return-timer>${autoReturn > 0 ? `Returning to lobby in ${fmtSec(autoReturn)}` : 'Returning to lobby shortly'}</p>
       </div>
     </section>
   `;
@@ -802,7 +835,7 @@ function renderDeadOverview(ps) {
     state.lastDeadOverviewRenderKey = overviewKey;
     target.innerHTML = deadOverviewMarkup(ps);
   }
-  updateSceneTimers(target, ps.phaseRemainingSec || 0);
+  updateSceneTimers(target, ps.phaseRemainingSec || 0, ps.autoReturnRemainingSec || 0);
 }
 
 function gmGuidanceMarkup(gm) {
@@ -818,7 +851,7 @@ function gmGuidanceMarkup(gm) {
     final_statements: ['Final statements', `${gm.finalStatementPending || 0} final statement(s) still pending.`],
     discussion: ['Table discussion', 'Let alive players discuss. Move to voting when the room is ready or when the timer expires.'],
     day_vote: ['Day voting', `${gm.pendingDayVotes || 0} alive player vote(s) still pending. Strict majority is required for elimination.`],
-    game_over: ['Game over', gm.winner === 'Voided' ? 'The GM voided this game. No scores were recorded. Reset to return to lobby setup.' : `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
+    game_over: ['Game over', gm.winner === 'Voided' ? `${gm.voidReason || 'The game was voided.'} Returning to lobby automatically.` : `Winner: ${winnerDisplayName(gm)}. Review scores before the automatic lobby return.`],
   };
   const [title, body] = guides[gm.phase] || ['Current phase', gm.phase || 'Waiting for game state.'];
   return `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
@@ -950,7 +983,7 @@ function renderMobileActionTray(ps) {
 }
 
 function playerGuidanceMarkup(ps) {
-  if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<strong>Game voided</strong><span>The GM voided this game. No scores were recorded.</span>';
+  if (ps.phase === 'game_over' && ps.winner === 'Voided') return `<strong>Game voided</strong><span>${escapeHtml(ps.voidReason || 'No scores were recorded.')} Returning to lobby automatically.</span>`;
   if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(winnerDisplayName(ps))}. Your score has been recorded.</span>`;
   if (!ps.alive && ps.phase !== 'final_statements') return '<strong>Observe only</strong><span>You are out of the round. Watch the table and keep private information private.</span>';
   if (ps.phase === 'night0') return '<strong>Role reveal</strong><span>Reveal privately, confirm when ready, then wait for the GM.</span>';
@@ -1213,8 +1246,8 @@ function actionMarkup(ps) {
   if (ps.phase === 'day_vote') return actionPicker('submit-day', ps, { label: 'Submit vote', hint: `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`, includeAbstain: true, skipLabel: 'Abstain' });
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
-  if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<p class="winner-text">Game voided by GM</p><p class="muted">No scores were recorded. Wait for the lobby reset.</p>';
-  if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;
+  if (ps.phase === 'game_over' && ps.winner === 'Voided') return `<p class="winner-text">Game voided</p><p class="muted">${escapeHtml(ps.voidReason || 'No scores were recorded.')} Returning to lobby automatically.</p>`;
+  if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(winnerDisplayName(ps))}</p>`;
   return '<p class="muted">No action right now.</p>';
 }
 
@@ -1434,6 +1467,7 @@ async function createAdminUser(form) {
 
 async function refreshAll() {
   if (!state.account) return;
+  await sendActivityHeartbeat().catch(() => {});
   await Promise.all([
     refreshServerInfo().catch(() => {}),
     refreshRooms().catch(() => {}),
@@ -1454,6 +1488,9 @@ function stopPolling() {
 }
 
 function bindEvents() {
+  ['pointerdown', 'keydown', 'touchstart', 'input'].forEach((eventName) => {
+    document.addEventListener(eventName, notePlayerInteraction, { passive: true });
+  });
   document.querySelectorAll('.nav-item').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
   $('login-form').addEventListener('submit', (e) => { e.preventDefault(); authSubmit(e.currentTarget, '/api/auth/login').catch((err) => setAuthMessage(err.message, true)); });
   $('register-form').addEventListener('submit', (e) => { e.preventDefault(); authSubmit(e.currentTarget, '/api/auth/register').catch((err) => setAuthMessage(err.message, true)); });
