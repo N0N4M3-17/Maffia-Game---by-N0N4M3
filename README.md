@@ -30,3 +30,4 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 ## Current Spec Drafts
 
 - [Spec v1 (Sections 1–2): Phase State Machine + Role Permission Matrix](docs/SPEC_V1.md)
+- [Product plan: aims, milestones, completion marks, and v1 release gates](docs/PRODUCT_PLAN.md)
