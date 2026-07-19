@@ -51,7 +51,7 @@ The release gate is all of the following:
 | Chat and information controls | **Partially implemented** | 65% | Mafia chat is phase-gated; public player chat currently needs phase/dead-player restriction hardening. |
 | Player/GM experience | **Partially implemented** | 70% | Functional responsive UI and GM observability exist; onboarding, accessibility, and polish remain. |
 | Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
-| Release operations and documentation | **In progress** | 35% | Basic Java launch instructions exist; packaging, troubleshooting, and GM runbook are missing. |
+| Release operations and documentation | **In progress** | 55% | Java launch instructions and a GM runbook exist; packaging, clean-environment verification, and release checklist remain. |
 | Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
 
 ## 4. Milestones and Goalposts
@@ -105,7 +105,7 @@ The release gate is all of the following:
 
 ### M4 — Playtest-ready experience
 
-- [ ] Add a concise GM runbook: host setup, LAN sharing, role balancing, phase controls, reset, and troubleshooting.
+- [x] Add a concise GM runbook: host setup, LAN sharing, role balancing, phase controls, reset, and troubleshooting.
 - [ ] Add player onboarding for joining, role reveal, action confirmation, waiting states, death, and game over.
 - [ ] Improve small-screen usability, keyboard support, semantic labels, color contrast, and non-color status cues.
 - [ ] Surface clear GM-facing phase guidance, action completion counts, outcomes, and winner summary.

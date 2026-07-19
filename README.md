@@ -61,3 +61,4 @@ The Rooms screen will show that URL as the secure public invite. Do not expose t
 
 - [Spec v1 (Sections 1–2): Phase State Machine + Role Permission Matrix](docs/SPEC_V1.md)
 - [Product plan: aims, milestones, completion marks, and v1 release gates](docs/PRODUCT_PLAN.md)
+- [GM runbook: hosting, rooms, admin, gameplay operation, and troubleshooting](docs/GM_RUNBOOK.md)
