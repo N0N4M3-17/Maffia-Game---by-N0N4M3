@@ -78,7 +78,7 @@ Treat the browser experience like five Unity-style scenes:
 
 ### M1 — Game setup and secrecy: complete
 
-- [x] GM configures counts for Mafia, Sheriff, Doctor, Vigilante, Town, and Vigilante shots.
+- [x] GM configures counts for Mafia, Sheriff, Doctor, Vigilante, Jester, Town, and Vigilante shots.
 - [x] Launch rejects invalid counts, role/player mismatches, and the current minimum testing composition.
 - [x] Roles are shuffled and assigned by the server.
 - [x] A player receives their own role, while the GM can inspect the full role table.
@@ -93,10 +93,10 @@ Treat the browser experience like five Unity-style scenes:
 - [x] Mafia can use a private, phase-limited chat and submit one kill vote each.
 - [x] Sheriff can investigate one alive player and receive a private alignment result.
 - [x] Doctor can protect an alive player, including themself, but not the same target on consecutive nights.
-- [x] Vigilante can skip or shoot an alive non-self target while shots remain.
+- [x] Vigilante can skip or shoot an alive non-self target while shots remain, with submitted choices locking and advancing like Sheriff/Doctor actions.
 - [x] Night resolution applies protection before mafia and vigilante attacks, allowing simultaneous deaths.
 - [x] Day voting supports target selection or abstention, resolution, role reveal, and a configurable public vote log.
-- [x] Win checks declare Town when no Mafia remain and Mafia when alive Mafia are at least the alive non-Mafia count.
+- [x] Win checks declare Town when no Mafia remain, Mafia when alive Mafia are at least the alive town-aligned count, Jester when voted out by day vote, and Vigilante when morning begins with only one Mafia and an armed Vigilante alive.
 - [x] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
 - [ ] Verify all role, tie, abstention, protection, and timer edge cases against executable tests.
   - [x] Add executable vote-helper tests for strict majority, ties, abstentions, and unique plurality behavior.

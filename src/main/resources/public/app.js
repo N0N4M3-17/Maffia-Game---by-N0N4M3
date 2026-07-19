@@ -1,7 +1,7 @@
 const state = {
   account: null,
   playerId: localStorage.getItem('playerId') || null,
-  roles: { mafia: 2, sheriff: 1, doctor: 1, vigilante: 0, town: 1 },
+  roles: { mafia: 2, sheriff: 1, doctor: 1, vigilante: 0, jester: 0, town: 1 },
   vigilanteShots: 1,
   timerSettings: { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, finalStatementSec: 45, discussionSec: 60, dayVoteSec: 60 },
   publicDayVoteTally: true,
@@ -22,6 +22,7 @@ const roleLabels = {
   sheriff: 'Sheriff',
   doctor: 'Doctor',
   vigilante: 'Vigilante',
+  jester: 'Jester',
   town: 'Town',
 };
 
@@ -367,6 +368,7 @@ async function refreshGm() {
   const setupVisible = gm.phase === 'lobby';
   const hostGrid = document.querySelector('#tab-host .host-grid');
   if (hostGrid) hostGrid.classList.toggle('gm-command-view', !setupVisible);
+  document.querySelector('#tab-host')?.classList.toggle('scene-tab', !setupVisible);
   $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
   $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
@@ -384,9 +386,10 @@ async function refreshGm() {
       sheriff: gm.config.sheriff,
       doctor: gm.config.doctor,
       vigilante: gm.config.vigilante,
+      jester: gm.config.jester ?? 0,
       town: gm.config.town,
     };
-    state.vigilanteShots = gm.config.vigilanteShots || 1;
+    state.vigilanteShots = gm.config.vigilanteShots ?? 1;
     renderRoleControls();
   }
   if (!state.settingsDirty && gm.timerSettings) {
@@ -441,7 +444,7 @@ function gmRoleDistribution(players) {
     acc[role] = (acc[role] || 0) + 1;
     return acc;
   }, {});
-  const roles = ['Mafia', 'Sheriff', 'Doctor', 'Vigilante', 'Town', 'Unassigned'];
+  const roles = ['Mafia', 'Sheriff', 'Doctor', 'Vigilante', 'Jester', 'Town', 'Unassigned'];
   return roles.filter((role) => counts[role]).map((role) => `
     <div class="gm-role-row ${role.toLowerCase()}">
       <span>${roleIcon(role)} ${escapeHtml(role)}</span>
@@ -666,6 +669,8 @@ function renderDeadOverview(ps) {
   const target = $('dead-overview');
   if (!panel || !target) return;
   const canObserve = !!ps && (!ps.alive || ps.phase === 'game_over') && (ps.observerPlayers || []).length;
+  document.querySelector('#tab-play')?.classList.toggle('scene-tab', canObserve);
+  document.querySelector('#tab-play .play-grid')?.classList.toggle('dead-scene-view', canObserve);
   panel.classList.toggle('hidden', !canObserve);
   if (!canObserve) {
     target.innerHTML = '';
@@ -842,7 +847,7 @@ function playerGuidanceMarkup(ps) {
     return '<strong>Night action</strong><span>Wait silently while the Doctor acts.</span>';
   }
   if (ps.phase === 'night_vigilante') {
-    if (ps.role === 'Vigilante') return ps.vigilanteTargetCurrent
+  if (ps.role === 'Vigilante') return ps.vigilanteActionSubmitted
       ? '<strong>Shot submitted</strong><span>Your target is selected below.</span>'
       : '<strong>Vigilante choice</strong><span>Choose a target or skip to save your shot.</span>';
     return '<strong>Night action</strong><span>Wait silently while the Vigilante acts.</span>';
@@ -886,7 +891,7 @@ function renderRole(ps) {
   const playGrid = document.querySelector('#tab-play .play-grid');
   if (playGrid) {
     playGrid.classList.toggle('deal-scene', ps.phase === 'night0');
-    playGrid.classList.remove('role-peeking', 'role-mafia', 'role-sheriff', 'role-doctor', 'role-vigilante', 'role-town');
+    playGrid.classList.remove('role-peeking', 'role-mafia', 'role-sheriff', 'role-doctor', 'role-vigilante', 'role-jester', 'role-town');
     if (cardRevealed) playGrid.classList.add('role-peeking', `role-${roleClass}`);
   }
   $('night0-controls').classList.toggle('hidden', ps.phase !== 'night0');
@@ -996,6 +1001,9 @@ function roleIcon(kind) {
   if (kind === 'Vigilante') {
     return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 18h17l5 4v4H17l-2 6h-5l2-6H8v-8Z"/><path d="M25 18v-4h6"/><path d="M13 26h6"/></svg>';
   }
+  if (kind === 'Jester') {
+    return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M10 18c2-8 7-11 10-4 3-7 8-4 10 4"/><path d="M10 18v10c0 4 20 4 20 0V18"/><path d="M14 25h12"/><path d="M16 29c2 2 6 2 8 0"/><path d="M10 18 6 10"/><path d="M20 14V6"/><path d="M30 18l4-8"/><path d="M5 9h3"/><path d="M18 5h4"/><path d="M32 9h3"/></svg>';
+  }
   if (kind === 'Town') {
     return '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20 20 10l12 10"/><path d="M12 19v13h16V19"/><path d="M17 32v-8h6v8"/></svg>';
   }
@@ -1047,7 +1055,9 @@ function actionPicker(action, ps, options) {
     : '';
   const doctorRepeat = action === 'submit-doctor' && selected && selected === ps.lastDoctorTarget;
   const needsTarget = !options.includeAbstain && !selected;
-  const locked = (action === 'submit-sheriff' && !!ps.sheriffTargetCurrent) || (action === 'submit-doctor' && !!ps.doctorProtectCurrent);
+  const locked = (action === 'submit-sheriff' && !!ps.sheriffTargetCurrent)
+    || (action === 'submit-doctor' && !!ps.doctorProtectCurrent)
+    || (action === 'submit-vigilante' && !!ps.vigilanteActionSubmitted);
   return `
     <div class="target-action" data-target-action="${action}" data-store-key="${escapeHtml(storeKey)}" data-requires-target="${options.includeAbstain ? 'false' : 'true'}" data-last-doctor-target="${escapeHtml(ps.lastDoctorTarget || '')}" data-locked="${locked ? 'true' : 'false'}">
       <input id="act-target" type="hidden" value="${escapeHtml(selected)}">
@@ -1127,7 +1137,7 @@ function bindActionTargets(panel) {
 }
 
 function renderPlayerAction(ps) {
-  const actionKey = `${ps.round}|${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.mafiaVoteCurrent}|${ps.sheriffTargetCurrent}|${ps.doctorProtectCurrent}|${ps.vigilanteTargetCurrent}|${ps.dayVoteCurrent}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.sheriffResultTargetName}|${ps.lastDoctorTarget}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
+  const actionKey = `${ps.round}|${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.mafiaVoteCurrent}|${ps.sheriffTargetCurrent}|${ps.doctorProtectCurrent}|${ps.vigilanteTargetCurrent}|${ps.vigilanteActionSubmitted}|${ps.dayVoteCurrent}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.sheriffResultTargetName}|${ps.lastDoctorTarget}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
   if (state.lastActionRenderKey === actionKey) return;
   state.lastActionRenderKey = actionKey;
   $('player-action-panel').innerHTML = actionMarkup(ps);

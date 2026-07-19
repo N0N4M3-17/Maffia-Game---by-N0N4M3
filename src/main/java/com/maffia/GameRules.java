@@ -24,7 +24,8 @@ final class GameRules {
         return t;
     }
 
-    static String winnerFor(long mafiaAlive, long townAlive, boolean rolesAssigned) {
+    static String winnerFor(long mafiaAlive, long townAlive, boolean rolesAssigned, boolean armedVigilanteDuel) {
+        if (armedVigilanteDuel && rolesAssigned) return "Vigilante";
         if (mafiaAlive == 0 && rolesAssigned) return "Town";
         if (mafiaAlive >= townAlive && mafiaAlive > 0) return "Mafia";
         return null;
