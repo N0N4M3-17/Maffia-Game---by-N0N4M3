@@ -272,7 +272,8 @@ code {
 }
 
 .play-grid {
-  grid-template-columns: minmax(280px, .8fr) minmax(320px, 1fr) minmax(280px, .9fr);
+  grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.35fr) minmax(270px, .82fr);
+  align-items: start;
 }
 
 .admin-grid {
@@ -285,6 +286,21 @@ code {
 
 .chat-panel {
   grid-column: span 3;
+}
+
+.action-panel-shell {
+  min-height: 335px;
+}
+
+.table-panel {
+  max-height: calc(100vh - 150px);
+  overflow: hidden;
+}
+
+.table-panel .list {
+  max-height: calc(100vh - 225px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .panel {
@@ -528,17 +544,27 @@ code {
   white-space: nowrap;
 }
 
-.player-row em {
-  color: var(--green);
+.life-badge {
   font-style: normal;
   font-size: 13px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(89, 194, 137, .12);
+  border: 1px solid rgba(89, 194, 137, .35);
+  color: var(--green);
 }
 
 .player-row.dead {
   opacity: .62;
 }
 
-.player-row.dead em {
+.life-badge.dead {
+  background: rgba(207, 74, 74, .10);
+  border-color: rgba(207, 74, 74, .35);
   color: var(--red-2);
 }
 
@@ -592,7 +618,9 @@ code {
 }
 
 .action-panel {
-  min-height: 190px;
+  min-height: 232px;
+  display: grid;
+  align-content: start;
 }
 
 .target-action {
@@ -624,7 +652,7 @@ code {
   background: rgba(89, 194, 137, .12);
 }
 
-.target-tile span:last-child {
+.target-tile > span:last-child {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -742,7 +770,7 @@ code {
 }
 
 .chat-log {
-  height: 140px;
+  height: 136px;
   overflow: auto;
   padding: 10px;
   border-radius: 8px;
@@ -880,8 +908,29 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .role-panel {
+    order: 1;
+  }
+
+  .action-panel-shell {
+    order: 2;
+    min-height: 0;
+  }
+
+  .table-panel {
+    order: 3;
+    max-height: none;
+  }
+
+  .table-panel .list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
   .chat-panel {
     grid-column: auto;
+    order: 4;
   }
 
   .topbar {
@@ -930,5 +979,31 @@ code {
 
   .roster-panel {
     grid-row: span 2;
+  }
+
+  .play-grid {
+    grid-template-areas:
+      "role action table"
+      "chat chat table";
+  }
+
+  .role-panel {
+    grid-area: role;
+  }
+
+  .action-panel-shell {
+    grid-area: action;
+  }
+
+  .table-panel {
+    grid-area: table;
+  }
+
+  .chat-panel {
+    grid-area: chat;
+  }
+
+  .chat-panel .chat-log {
+    height: clamp(128px, 18vh, 190px);
   }
 }

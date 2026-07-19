@@ -597,7 +597,7 @@ function renderPlayerList(players) {
     <article class="player-row ${p.alive ? '' : 'dead'}">
       ${avatar(p)}
       <div><strong>${escapeHtml(p.name)}</strong><span>${p.revealedRole || (p.alive ? 'In play' : 'Unknown')}</span></div>
-      <em>${p.alive ? 'Alive' : 'Dead'}</em>
+      <em class="life-badge ${p.alive ? 'alive' : 'dead'}">${p.alive ? 'Alive' : 'Dead'}</em>
     </article>
   `).join('') || '<div class="empty-state">Waiting for players.</div>';
 }

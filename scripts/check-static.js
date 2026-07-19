@@ -70,15 +70,18 @@ assert(backend.includes('"/api/my-player"') && backend.includes('findPlayerByAcc
 assert(backend.includes('PUBLIC_URL') && backend.includes('publicUrlSecure'), 'server info must expose secure public URL status');
 assert(html.includes('data-copy-target="lan-url"') && html.includes('data-copy-target="public-url"'), 'invite links must have copy controls');
 assert(html.includes('admin-create-user-form'), 'admin create-user form must exist');
+assert(html.includes('action-panel-shell') && html.includes('table-panel'), 'play screen must expose dedicated action/table layout regions');
 assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText'), 'invite copy action must be wired');
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
 assert(app.includes('target-tile') && app.includes('data-target-id') && !app.includes('function actionSelect'), 'player actions must use clickable target tiles instead of dropdown selects');
 assert(app.includes('ps.round') && app.includes('doctorProtectCurrent') && app.includes('vigilanteTargetCurrent'), 'action choices must be keyed by round and restored after submit');
 assert(app.includes('Doctor rule: you cannot protect the same target') && app.includes('lastDoctorTarget'), 'doctor repeat-target warning must be wired');
 assert(app.includes('sheriffResultMarkup') && app.includes('sheriffResultTargetName') && app.includes('Mafia alignment confirmed'), 'sheriff result visual must be wired');
+assert(app.includes('life-badge'), 'player list must use explicit alive/dead status badges');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
+assert(read('src/main/resources/public/styles.css').includes('grid-template-areas') && read('src/main/resources/public/styles.css').includes('@media (orientation: portrait)'), 'play layout must keep separate landscape and portrait rules');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {
