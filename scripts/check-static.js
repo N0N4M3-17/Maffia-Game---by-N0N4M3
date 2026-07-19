@@ -56,6 +56,7 @@ assert(read('pom.xml').includes('junit-jupiter') && read('pom.xml').includes('ma
 assert(gameRules.includes('majorityTarget') && gameRules.includes('tallyVotes'), 'vote resolution helpers must live in testable GameRules');
 assert(gameRulesTest.includes('strictMajorityRequiresMoreThanHalfOfAliveVoters') && gameRulesTest.includes('strictMajorityIgnoresAbstentionsAndSkipsNoMajority') && gameRulesTest.includes('tiesDoNotResolveEvenWhenVoteCountMeetsThreshold'), 'JUnit vote tests must cover majority, abstentions, and ties');
 assert(gameRules.includes('winnerFor') && gameRulesTest.includes('mafiaWinsAtParityOrMajority') && gameRulesTest.includes('townWinsOnlyAfterAssignedRolesWhenNoMafiaRemain'), 'JUnit rule tests must cover win-condition decisions');
+assert(gameRules.includes('nextNightRolePhase') && gameRulesTest.includes('nightPhaseOrderSkipsDeadOrMissingOptionalRoles') && gameRulesTest.includes('nightPhaseOrderContinuesFromCurrentRoleOnly'), 'JUnit rule tests must cover night role phase ordering');
 assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKDF2-HMAC-SHA256');
 assert(backend.includes('"POST".equals(method) && "/api/admin/users".equals(path)'), 'admin must be able to create user accounts');
 assert(backend.includes('adminCount()') && backend.includes('At least one admin account must remain.'), 'admin management must prevent last-admin lockout');
@@ -66,6 +67,7 @@ assert(backend.includes('final_statements') && backend.includes('finalStatementP
 assert(backend.includes('Final statement already submitted'), 'final statements must be limited to one per eligible player');
 assert(backend.includes('majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null'), 'mafia votes must early-lock on majority');
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0'), 'day votes must resolve on majority or all votes submitted');
+assert((backend.match(/"locked", true, "phase", STATE\.phase/g) || []).length >= 4, 'Mafia, Sheriff, Doctor, and day submits must return locked phase advancement when action resolution completes');
 assert(backend.includes('startPhaseTicker') && backend.includes('scheduleAtFixedRate'), 'server must run an independent phase ticker');
 assert(backend.includes('lastDoctorTarget') && backend.includes('sheriffResultTargetName'), 'player payload must include action guidance context');
 assert(backend.includes('sheriffTargetCurrent') && backend.includes('doctorProtectCurrent') && backend.includes('vigilanteTargetCurrent'), 'player payload must preserve submitted action choices');
@@ -93,14 +95,18 @@ assert(app.includes("gm.phase === 'lobby' || gm.phase === 'game_over'") && app.i
 assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
 assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
 assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
+assert(app.includes('dealRenderKey') && app.includes('stage.querySelectorAll') && app.includes('This copied card becomes your private role card below.'), 'Night 0 deal animation must render once per deal and then update existing cards');
 assert(app.includes('roleIcon') && app.includes("kind === 'Sheriff'") && app.includes("kind === 'Vigilante'"), 'role symbols must cover the supported role set');
 assert(html.includes('role="button"') && app.includes('toggleRolePeek') && app.includes('roleCardKeydown'), 'role card peek toggle must be clickable and keyboard accessible');
+assert(app.includes('role-peeking') && app.includes('Tap to peek. Tap again to hide'), 'role card must support reveal/hide peeking beyond startup');
+assert(app.includes('selected-target-summary') && app.includes('Action committed. Advanced to'), 'action picker must show selected target and refresh after locked submits');
 assert(app.includes('role-mini-icon') && app.includes('Vigilante shots'), 'setup role controls must show role symbols and vigilante ammunition setup');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
 assert(read('src/main/resources/public/styles.css').includes('grid-template-areas') && read('src/main/resources/public/styles.css').includes('@media (orientation: portrait)'), 'play layout must keep separate landscape and portrait rules');
 assert(read('src/main/resources/public/styles.css').includes('@keyframes dealShuffle') && read('src/main/resources/public/styles.css').includes('prefers-reduced-motion'), 'role deal animation must include reduced-motion support');
+assert(read('src/main/resources/public/styles.css').includes('.play-grid.role-peeking') && read('src/main/resources/public/styles.css').includes('.selected-target-summary'), 'role peek and selected-target UI states must be styled');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {

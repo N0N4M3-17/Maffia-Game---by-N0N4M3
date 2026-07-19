@@ -30,6 +30,16 @@ final class GameRules {
         return null;
     }
 
+    static String nextNightRolePhase(String currentPhase, boolean sheriffAlive, boolean doctorAlive, boolean vigilanteAlive) {
+        return switch (currentPhase) {
+            case "night_mafia" -> firstAvailableNightPhase(sheriffAlive, doctorAlive, vigilanteAlive);
+            case "night_sheriff" -> firstAvailableNightPhase(false, doctorAlive, vigilanteAlive);
+            case "night_doctor" -> vigilanteAlive ? "night_vigilante" : null;
+            case "night_vigilante" -> null;
+            default -> throw new IllegalArgumentException("Not a night role phase: " + currentPhase);
+        };
+    }
+
     private static String winningTarget(Map<String, Integer> counts, int minimum) {
         String best = null;
         int bestCount = 0;
@@ -44,5 +54,12 @@ final class GameRules {
             }
         }
         return bestCount >= minimum && !tie ? best : null;
+    }
+
+    private static String firstAvailableNightPhase(boolean sheriffAlive, boolean doctorAlive, boolean vigilanteAlive) {
+        if (sheriffAlive) return "night_sheriff";
+        if (doctorAlive) return "night_doctor";
+        if (vigilanteAlive) return "night_vigilante";
+        return null;
     }
 }

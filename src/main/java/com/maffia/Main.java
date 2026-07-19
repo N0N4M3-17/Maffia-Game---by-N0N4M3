@@ -562,7 +562,8 @@ public class Main {
                 actor.lastSheriffTargetName = t.name;
                 actor.lastSheriffResult = "Mafia".equals(t.role) ? "Mafia" : "Town";
                 STATE.lastSheriffResult = actor.name + " -> " + t.name + " is " + actor.lastSheriffResult;
-                writeJson(ex, 200, Map.of("ok", true));
+                nextPhaseInternal();
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
                 return;
             }
 
@@ -574,7 +575,8 @@ public class Main {
                 if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                 if (target.equals(actor.lastDoctorTarget)) { writeJson(ex, 400, Map.of("error", "Doctor cannot protect same target consecutively.")); return; }
                 STATE.doctorTarget = target;
-                writeJson(ex, 200, Map.of("ok", true));
+                nextPhaseInternal();
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
                 return;
             }
 
@@ -726,22 +728,7 @@ public class Main {
         if ("game_over".equals(STATE.phase)) return;
         switch (STATE.phase) {
             case "night0" -> beginNight();
-            case "night_mafia" -> {
-                if (aliveRoleExists("Sheriff")) setPhase("night_sheriff");
-                else if (aliveRoleExists("Doctor")) setPhase("night_doctor");
-                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_sheriff" -> {
-                if (aliveRoleExists("Doctor")) setPhase("night_doctor");
-                else if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_doctor" -> {
-                if (aliveRoleExists("Vigilante")) setPhase("night_vigilante");
-                else endNightAndEnterMorning();
-            }
-            case "night_vigilante" -> endNightAndEnterMorning();
+            case "night_mafia", "night_sheriff", "night_doctor", "night_vigilante" -> advanceNightRolePhase();
             case "morning" -> {
                 STATE.afterFinalStatementsPhase = "discussion";
                 if (!STATE.finalStatementPlayerIds.isEmpty()) setPhase("final_statements");
@@ -762,6 +749,17 @@ public class Main {
                 }
             }
         }
+    }
+
+    private static void advanceNightRolePhase() {
+        String next = GameRules.nextNightRolePhase(
+                STATE.phase,
+                aliveRoleExists("Sheriff"),
+                aliveRoleExists("Doctor"),
+                aliveRoleExists("Vigilante")
+        );
+        if (next == null) endNightAndEnterMorning();
+        else setPhase(next);
     }
 
     private static void endNightAndEnterMorning() {

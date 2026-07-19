@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class GameRulesTest {
@@ -69,5 +70,26 @@ class GameRulesTest {
     @Test
     void gameContinuesWhileTownOutnumbersMafia() {
         assertNull(GameRules.winnerFor(1, 2, true));
+    }
+
+    @Test
+    void nightPhaseOrderSkipsDeadOrMissingOptionalRoles() {
+        assertEquals("night_sheriff", GameRules.nextNightRolePhase("night_mafia", true, true, true));
+        assertEquals("night_doctor", GameRules.nextNightRolePhase("night_mafia", false, true, true));
+        assertEquals("night_vigilante", GameRules.nextNightRolePhase("night_mafia", false, false, true));
+        assertNull(GameRules.nextNightRolePhase("night_mafia", false, false, false));
+    }
+
+    @Test
+    void nightPhaseOrderContinuesFromCurrentRoleOnly() {
+        assertEquals("night_doctor", GameRules.nextNightRolePhase("night_sheriff", true, true, true));
+        assertEquals("night_vigilante", GameRules.nextNightRolePhase("night_sheriff", false, false, true));
+        assertEquals("night_vigilante", GameRules.nextNightRolePhase("night_doctor", true, true, true));
+        assertNull(GameRules.nextNightRolePhase("night_vigilante", true, true, true));
+    }
+
+    @Test
+    void nightPhaseOrderRejectsNonNightRolePhase() {
+        assertThrows(IllegalArgumentException.class, () -> GameRules.nextNightRolePhase("discussion", true, true, true));
     }
 }
