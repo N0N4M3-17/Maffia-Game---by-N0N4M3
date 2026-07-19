@@ -39,7 +39,7 @@ button {
   cursor: pointer;
 }
 
-input, select {
+input, select, textarea {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -47,6 +47,11 @@ input, select {
   background: #121722;
   color: var(--text);
   padding: 9px 10px;
+}
+
+textarea {
+  min-height: 112px;
+  resize: vertical;
 }
 
 label {
@@ -270,6 +275,14 @@ code {
   grid-template-columns: minmax(280px, .8fr) minmax(320px, 1fr) minmax(280px, .9fr);
 }
 
+.admin-grid {
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+}
+
+.admin-list-panel {
+  min-width: 0;
+}
+
 .chat-panel {
   grid-column: span 3;
 }
@@ -370,20 +383,69 @@ code {
   display: block;
 }
 
+.room-row em {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(89, 194, 137, .16);
+  color: var(--green);
+  font-size: 12px;
+  font-style: normal;
+}
+
 .share-box {
   margin-top: 16px;
   display: grid;
-  gap: 7px;
+  gap: 10px;
   padding: 12px;
   border-radius: 8px;
   background: #121722;
   border: 1px solid var(--line);
 }
 
+.share-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.share-row > div {
+  min-width: 0;
+}
+
 .share-box span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
+}
+
+.share-box em {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(207, 74, 74, .14);
+  color: var(--red-2);
+  font-style: normal;
+  text-transform: none;
+}
+
+.share-box em.ok {
+  background: rgba(89, 194, 137, .16);
+  color: var(--green);
+}
+
+.copy-link {
+  min-width: 70px;
 }
 
 .role-controls, .timer-controls {
@@ -568,6 +630,12 @@ code {
   gap: 10px;
 }
 
+.score-editor {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
 .score-grid div {
   min-height: 112px;
   display: grid;
@@ -662,7 +730,7 @@ code {
     padding-top: 20px;
   }
 
-  .auth-grid, .rooms-grid, .profile-grid, .host-grid, .play-grid {
+  .auth-grid, .rooms-grid, .profile-grid, .host-grid, .play-grid, .admin-grid {
     grid-template-columns: 1fr;
   }
 
@@ -696,6 +764,10 @@ code {
   }
 
   .score-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .score-editor {
     grid-template-columns: 1fr;
   }
 

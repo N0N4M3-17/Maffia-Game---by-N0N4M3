@@ -85,11 +85,13 @@ public class Main {
 
         if ("GET".equals(method) && "/api/server-info".equals(path)) {
             int port = ex.getLocalAddress().getPort();
+            String publicUrl = System.getenv().getOrDefault("PUBLIC_URL", "");
             writeJson(ex, 200, Map.of(
                     "port", port,
                     "localhost", "http://localhost:" + port,
                     "lanUrls", getLanUrls(port),
-                    "publicUrl", System.getenv().getOrDefault("PUBLIC_URL", "")
+                    "publicUrl", publicUrl,
+                    "publicUrlSecure", publicUrl.startsWith("https://")
             ));
             return;
         }
@@ -182,6 +184,37 @@ public class Main {
                 return;
             }
 
+            if ("POST".equals(method) && "/api/admin/users".equals(path)) {
+                Account admin = requireAdmin(ex);
+                if (admin == null) return;
+                JsonObject b = readBodyJson(ex);
+                String email = text(b, "email").toLowerCase();
+                String username = text(b, "username");
+                String displayName = text(b, "displayName");
+                String password = text(b, "password");
+                String error = validateRegistration(email, username, password);
+                if (error != null) {
+                    writeJson(ex, 400, Map.of("error", error));
+                    return;
+                }
+                if (displayName.isBlank() || displayName.length() > 32) {
+                    writeJson(ex, 400, Map.of("error", "Display name must be 1-32 characters."));
+                    return;
+                }
+                if (DB.findAccountByLogin(email) != null || DB.findAccountByLogin(username) != null) {
+                    writeJson(ex, 409, Map.of("error", "Email or username is already registered."));
+                    return;
+                }
+                Account created = Account.create(email, username, displayName, password, b.has("isAdmin") && b.get("isAdmin").getAsBoolean());
+                if (b.has("scoreWins")) created.scoreWins = Math.max(0, b.get("scoreWins").getAsInt());
+                if (b.has("scoreLosses")) created.scoreLosses = Math.max(0, b.get("scoreLosses").getAsInt());
+                if (b.has("scoreGames")) created.scoreGames = Math.max(created.scoreWins + created.scoreLosses, b.get("scoreGames").getAsInt());
+                DB.data.accounts.add(created);
+                DB.save();
+                writeJson(ex, 201, Map.of("user", adminAccountPayload(created)));
+                return;
+            }
+
             if ("PUT".equals(method) && path.startsWith("/api/admin/users/")) {
                 Account admin = requireAdmin(ex);
                 if (admin == null) return;
@@ -227,7 +260,14 @@ public class Main {
                     }
                     target.email = email;
                 }
-                if (b.has("isAdmin")) target.isAdmin = b.get("isAdmin").getAsBoolean();
+                if (b.has("isAdmin")) {
+                    boolean nextAdmin = b.get("isAdmin").getAsBoolean();
+                    if (!nextAdmin && target.isAdmin && DB.adminCount() <= 1) {
+                        writeJson(ex, 400, Map.of("error", "At least one admin account must remain."));
+                        return;
+                    }
+                    target.isAdmin = nextAdmin;
+                }
                 if (b.has("scoreWins")) target.scoreWins = Math.max(0, b.get("scoreWins").getAsInt());
                 if (b.has("scoreLosses")) target.scoreLosses = Math.max(0, b.get("scoreLosses").getAsInt());
                 if (b.has("scoreGames")) target.scoreGames = Math.max(target.scoreWins + target.scoreLosses, b.get("scoreGames").getAsInt());
@@ -243,6 +283,11 @@ public class Main {
                 String id = path.substring("/api/admin/users/".length());
                 if (admin.id.equals(id)) {
                     writeJson(ex, 400, Map.of("error", "The signed-in admin cannot delete themselves."));
+                    return;
+                }
+                Account target = DB.findAccount(id);
+                if (target != null && target.isAdmin && DB.adminCount() <= 1) {
+                    writeJson(ex, 400, Map.of("error", "At least one admin account must remain."));
                     return;
                 }
                 boolean removed = DB.data.accounts.removeIf(a -> a.id.equals(id));
@@ -263,6 +308,10 @@ public class Main {
             if ("POST".equals(method) && "/api/rooms".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
+                if (!STATE.players.isEmpty() && !"game_over".equals(STATE.phase)) {
+                    writeJson(ex, 409, Map.of("error", "Reset or finish the active room before creating a new hosted table."));
+                    return;
+                }
                 JsonObject b = readBodyJson(ex);
                 String name = text(b, "name");
                 String mode = text(b, "networkMode");
@@ -272,6 +321,8 @@ public class Main {
                 }
                 Room room = Room.create(name, account.id, mode.isBlank() ? "local" : mode);
                 DB.data.rooms.add(room);
+                DB.data.activeRoomId = room.id;
+                STATE.reset();
                 DB.save();
                 writeJson(ex, 201, Map.of("room", roomPayload(room)));
                 return;
@@ -285,6 +336,15 @@ public class Main {
                 if (room == null) {
                     writeJson(ex, 404, Map.of("error", "Room not found."));
                     return;
+                }
+                Room active = DB.defaultRoom();
+                if (active != null && !active.id.equals(room.id)) {
+                    if (!STATE.players.isEmpty() && !"game_over".equals(STATE.phase)) {
+                        writeJson(ex, 409, Map.of("error", "Another room is active. Ask the host to reset before switching rooms."));
+                        return;
+                    }
+                    DB.data.activeRoomId = room.id;
+                    STATE.reset();
                 }
                 if (!"lobby".equals(STATE.phase) && STATE.players.stream().noneMatch(p -> account.id.equals(p.accountId))) {
                     writeJson(ex, 409, Map.of("error", "Game already started."));
@@ -386,6 +446,7 @@ public class Main {
                         positiveSecondOrDefault(b, "nightDoctorSec", STATE.timerSettings.nightDoctorSec),
                         positiveSecondOrDefault(b, "nightVigilanteSec", STATE.timerSettings.nightVigilanteSec),
                         positiveSecondOrDefault(b, "morningSec", STATE.timerSettings.morningSec),
+                        positiveSecondOrDefault(b, "finalStatementSec", STATE.timerSettings.finalStatementSec),
                         positiveSecondOrDefault(b, "discussionSec", STATE.timerSettings.discussionSec),
                         positiveSecondOrDefault(b, "dayVoteSec", STATE.timerSettings.dayVoteSec)
                 );
@@ -416,7 +477,7 @@ public class Main {
                     writeJson(ex, 403, Map.of("error", "Only an admin or room host can advance phases."));
                     return;
                 }
-                if (!("night0".equals(STATE.phase) || "day_vote".equals(STATE.phase) || "discussion".equals(STATE.phase) || "morning".equals(STATE.phase))) {
+                if (!("night0".equals(STATE.phase) || "day_vote".equals(STATE.phase) || "discussion".equals(STATE.phase) || "morning".equals(STATE.phase) || "final_statements".equals(STATE.phase))) {
                     writeJson(ex, 400, Map.of("error", "Cannot start night from current phase."));
                     return;
                 }
@@ -459,7 +520,12 @@ public class Main {
                 Player voted = findPlayer(target);
                 if (voted != null) pushMafiaChat("SYSTEM", actor.name + " voted for " + voted.name);
                 int pending = Math.max(0, alivePlayersByRole("Mafia").size() - STATE.mafiaVotes.size());
-                writeJson(ex, 200, Map.of("ok", true, "pendingMafiaVotes", pending));
+                if (majorityTarget(STATE.mafiaVotes, alivePlayersByRole("Mafia").size()) != null) {
+                    nextPhaseInternal();
+                    writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
+                    return;
+                }
+                writeJson(ex, 200, Map.of("ok", true, "pendingMafiaVotes", pending, "locked", false));
                 return;
             }
 
@@ -523,7 +589,12 @@ public class Main {
                     pushPlayerChat("SYSTEM", actor.name + " voted for " + votedName);
                 }
                 int pending = Math.max(0, aliveCount() - STATE.dayVotes.size());
-                writeJson(ex, 200, Map.of("ok", true, "pendingDayVotes", pending));
+                if (majorityTarget(STATE.dayVotes, aliveCount()) != null || pending == 0) {
+                    nextPhaseInternal();
+                    writeJson(ex, 200, Map.of("ok", true, "locked", true, "phase", STATE.phase));
+                    return;
+                }
+                writeJson(ex, 200, Map.of("ok", true, "pendingDayVotes", pending, "locked", false));
                 return;
             }
 
@@ -542,10 +613,26 @@ public class Main {
                 JsonObject b = readBodyJson(ex);
                 Player actor = requireSessionPlayer(ex, b);
                 if (actor == null) return;
-                if (!actor.alive) { writeJson(ex, 403, Map.of("error", "Dead players are observe-only.")); return; }
-                if (!PUBLIC_CHAT_PHASES.contains(STATE.phase)) { writeJson(ex, 403, Map.of("error", "Public chat is available during morning, discussion, and voting.")); return; }
                 String msg = text(b, "message");
                 if (msg.isBlank()) { writeJson(ex, 400, Map.of("error", "message required")); return; }
+                if ("final_statements".equals(STATE.phase)) {
+                    if (!STATE.finalStatementPlayerIds.contains(actor.id)) {
+                        writeJson(ex, 403, Map.of("error", "Only newly eliminated players may give a final statement."));
+                        return;
+                    }
+                    if (STATE.finalStatements.containsKey(actor.id)) {
+                        writeJson(ex, 409, Map.of("error", "Final statement already submitted."));
+                        return;
+                    }
+                    String statement = limitMessage(msg);
+                    STATE.finalStatements.put(actor.id, statement);
+                    pushPlayerChat("FINAL " + actor.name, statement);
+                    if (STATE.finalStatements.size() >= STATE.finalStatementPlayerIds.size()) nextPhaseInternal();
+                    writeJson(ex, 200, Map.of("ok", true));
+                    return;
+                }
+                if (!actor.alive) { writeJson(ex, 403, Map.of("error", "Dead players are observe-only.")); return; }
+                if (!PUBLIC_CHAT_PHASES.contains(STATE.phase)) { writeJson(ex, 403, Map.of("error", "Public chat is available during morning, discussion, and voting.")); return; }
                 pushPlayerChat(actor.name, limitMessage(msg));
                 writeJson(ex, 200, Map.of("ok", true));
                 return;
@@ -599,6 +686,8 @@ public class Main {
         STATE.vigilanteTarget = null;
         STATE.dayVotes.clear();
         STATE.morningDeaths = new ArrayList<>();
+        STATE.finalStatementPlayerIds = new ArrayList<>();
+        STATE.finalStatements = new LinkedHashMap<>();
         for (Player p : STATE.players) {
             if ("Sheriff".equals(p.role)) p.lastSheriffResult = null;
         }
@@ -625,12 +714,24 @@ public class Main {
                 else endNightAndEnterMorning();
             }
             case "night_vigilante" -> endNightAndEnterMorning();
-            case "morning" -> setPhase("discussion");
+            case "morning" -> {
+                STATE.afterFinalStatementsPhase = "discussion";
+                if (!STATE.finalStatementPlayerIds.isEmpty()) setPhase("final_statements");
+                else setPhase("discussion");
+            }
+            case "final_statements" -> {
+                if ("night".equals(STATE.afterFinalStatementsPhase)) beginNight();
+                else setPhase("discussion");
+            }
             case "discussion" -> setPhase("day_vote");
             case "day_vote" -> {
                 resolveDayVote();
                 checkWin();
-                if (!"game_over".equals(STATE.phase)) beginNight();
+                if (!"game_over".equals(STATE.phase)) {
+                    STATE.afterFinalStatementsPhase = "night";
+                    if (!STATE.finalStatementPlayerIds.isEmpty()) setPhase("final_statements");
+                    else beginNight();
+                }
             }
         }
     }
@@ -660,20 +761,33 @@ public class Main {
             Player p = findPlayer(id);
             if (p != null && p.alive) {
                 p.alive = false;
-                STATE.morningDeaths.add(Map.of("id", p.id, "name", p.name, "role", p.role));
+                addDeathForAnnouncement(p);
             }
         }
     }
 
     private static void resolveDayVote() {
-        String target = pluralityTarget(STATE.dayVotes);
+        String target = majorityTarget(STATE.dayVotes, aliveCount());
         if (target != null) {
             Player p = findPlayer(target);
             if (p != null && p.alive) {
                 p.alive = false;
-                STATE.morningDeaths = List.of(Map.of("id", p.id, "name", p.name, "role", p.role));
+        STATE.morningDeaths = new ArrayList<>();
+        STATE.finalStatementPlayerIds = new ArrayList<>();
+        STATE.finalStatements = new LinkedHashMap<>();
+        STATE.afterFinalStatementsPhase = "discussion";
+                addDeathForAnnouncement(p);
             }
-        } else STATE.morningDeaths = new ArrayList<>();
+        } else {
+            STATE.morningDeaths = new ArrayList<>();
+            STATE.finalStatementPlayerIds = new ArrayList<>();
+            STATE.finalStatements = new LinkedHashMap<>();
+        }
+    }
+
+    private static void addDeathForAnnouncement(Player p) {
+        STATE.morningDeaths.add(Map.of("id", p.id, "name", p.name, "role", p.role));
+        if (!STATE.finalStatementPlayerIds.contains(p.id)) STATE.finalStatementPlayerIds.add(p.id);
     }
 
     private static void checkWin() {
@@ -768,6 +882,7 @@ public class Main {
             case "night_doctor" -> STATE.timerSettings.nightDoctorSec;
             case "night_vigilante" -> STATE.timerSettings.nightVigilanteSec;
             case "morning" -> STATE.timerSettings.morningSec;
+            case "final_statements" -> STATE.timerSettings.finalStatementSec;
             case "discussion" -> STATE.timerSettings.discussionSec;
             case "day_vote" -> STATE.timerSettings.dayVoteSec;
             default -> 0;
@@ -803,6 +918,8 @@ public class Main {
         payload.put("timerSettings", STATE.timerSettings.toMap());
         payload.put("expectedRoleTotal", rolePool(STATE.config).size());
         payload.put("morningDeaths", STATE.morningDeaths);
+        payload.put("finalStatements", STATE.finalStatements);
+        payload.put("finalStatementPending", Math.max(0, STATE.finalStatementPlayerIds.size() - STATE.finalStatements.size()));
         payload.put("winner", STATE.winner);
         payload.put("lastSheriffResult", STATE.lastSheriffResult);
         payload.put("mafiaVoteTally", tally(STATE.mafiaVotes));
@@ -839,6 +956,9 @@ public class Main {
             return row;
         }).toList());
         payload.put("morningDeaths", STATE.morningDeaths);
+        payload.put("finalStatements", STATE.finalStatements);
+        payload.put("finalStatementEligible", STATE.finalStatementPlayerIds.contains(p.id));
+        payload.put("finalStatementSubmitted", STATE.finalStatements.containsKey(p.id));
         payload.put("winner", STATE.winner);
         payload.put("mafiaVoteCurrent", STATE.mafiaVotes.get(p.id));
         payload.put("dayVoteCurrent", STATE.dayVotes.get(p.id));
@@ -851,6 +971,18 @@ public class Main {
         payload.put("room", roomPayload(DB.defaultRoom()));
         payload.put("account", accountPayload(account));
         payload.put("mafiaChat", "Mafia".equals(p.role) && p.alive && "night_mafia".equals(STATE.phase) ? chatPayload(STATE.mafiaChat) : List.of());
+        payload.put("mafiaTeam", "Mafia".equals(p.role)
+                ? STATE.players.stream()
+                        .filter(other -> "Mafia".equals(other.role))
+                        .map(other -> {
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            row.put("id", other.id);
+                            row.put("name", other.name);
+                            row.put("alive", other.alive);
+                            return row;
+                        })
+                        .toList()
+                : List.of());
         payload.put("playerChat", chatPayload(STATE.playerChat));
         return payload;
     }
@@ -880,6 +1012,7 @@ public class Main {
                 "name", r.name,
                 "networkMode", r.networkMode,
                 "hostAccountId", r.hostAccountId,
+                "active", r.id.equals(DB.data.activeRoomId),
                 "createdAt", r.createdAt,
                 "lastActiveAt", r.lastActiveAt
         );
@@ -1134,6 +1267,9 @@ public class Main {
                     if (data.accounts == null) data.accounts = new ArrayList<>();
                     if (data.rooms == null) data.rooms = new ArrayList<>();
                     if (data.sessions == null) data.sessions = new HashMap<>();
+                    if (data.activeRoomId == null || data.activeRoomId.isBlank()) {
+                        data.activeRoomId = data.rooms.isEmpty() ? "" : data.rooms.get(0).id;
+                    }
                 }
             } catch (Exception err) {
                 throw new IllegalStateException("Could not load local database.", err);
@@ -1166,13 +1302,18 @@ public class Main {
         void ensureDefaultRoom() {
             if (data.rooms.isEmpty()) {
                 Account admin = findAccountByLogin(ADMIN_USERNAME);
-                data.rooms.add(Room.create("Table One", admin == null ? "" : admin.id, "local"));
+                Room room = Room.create("Table One", admin == null ? "" : admin.id, "local");
+                data.rooms.add(room);
+                data.activeRoomId = room.id;
+            } else if (data.activeRoomId == null || findRoom(data.activeRoomId) == null) {
+                data.activeRoomId = data.rooms.get(0).id;
             }
         }
 
         Room defaultRoom() {
             ensureDefaultRoom();
-            return data.rooms.get(0);
+            Room active = findRoom(data.activeRoomId);
+            return active == null ? data.rooms.get(0) : active;
         }
 
         Account findAccount(String id) {
@@ -1185,6 +1326,10 @@ public class Main {
                     .filter(a -> a.email.equalsIgnoreCase(normalized) || a.username.equalsIgnoreCase(normalized))
                     .findFirst()
                     .orElse(null);
+        }
+
+        long adminCount() {
+            return data.accounts.stream().filter(a -> a.isAdmin).count();
         }
 
         Room findRoom(String id) {
@@ -1202,6 +1347,7 @@ public class Main {
         List<Account> accounts = new ArrayList<>();
         List<Room> rooms = new ArrayList<>();
         Map<String, Session> sessions = new HashMap<>();
+        String activeRoomId = "";
     }
 
     private static final class Account {
@@ -1262,7 +1408,7 @@ public class Main {
 
         List<Player> players = new ArrayList<>();
         RoleConfig config = new RoleConfig(2, 1, 1, 0, 1, 1);
-        TimerSettings timerSettings = new TimerSettings(60, 60, 60, 60, 60, 60, 60);
+        TimerSettings timerSettings = new TimerSettings(60, 60, 60, 60, 60, 45, 60, 60);
 
         Map<String, String> mafiaVotes = new HashMap<>();
         String sheriffTarget = null;
@@ -1271,6 +1417,9 @@ public class Main {
         Map<String, String> dayVotes = new HashMap<>();
 
         List<Map<String, String>> morningDeaths = new ArrayList<>();
+        List<String> finalStatementPlayerIds = new ArrayList<>();
+        Map<String, String> finalStatements = new LinkedHashMap<>();
+        String afterFinalStatementsPhase = "discussion";
         List<ChatMessage> mafiaChat = new ArrayList<>();
         List<ChatMessage> playerChat = new ArrayList<>();
         boolean publicDayVoteTally = true;
@@ -1285,13 +1434,16 @@ public class Main {
             scoresRecorded = false;
             players = new ArrayList<>();
             config = new RoleConfig(2, 1, 1, 0, 1, 1);
-            timerSettings = new TimerSettings(60, 60, 60, 60, 60, 60, 60);
+            timerSettings = new TimerSettings(60, 60, 60, 60, 60, 45, 60, 60);
             mafiaVotes = new HashMap<>();
             sheriffTarget = null;
             doctorTarget = null;
             vigilanteTarget = null;
             dayVotes = new HashMap<>();
             morningDeaths = new ArrayList<>();
+            finalStatementPlayerIds = new ArrayList<>();
+            finalStatements = new LinkedHashMap<>();
+            afterFinalStatementsPhase = "discussion";
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
             publicDayVoteTally = true;
@@ -1317,13 +1469,14 @@ public class Main {
     }
 
     private static final class TimerSettings {
-        int nightMafiaSec, nightSheriffSec, nightDoctorSec, nightVigilanteSec, morningSec, discussionSec, dayVoteSec;
-        TimerSettings(int nightMafiaSec, int nightSheriffSec, int nightDoctorSec, int nightVigilanteSec, int morningSec, int discussionSec, int dayVoteSec) {
+        int nightMafiaSec, nightSheriffSec, nightDoctorSec, nightVigilanteSec, morningSec, finalStatementSec, discussionSec, dayVoteSec;
+        TimerSettings(int nightMafiaSec, int nightSheriffSec, int nightDoctorSec, int nightVigilanteSec, int morningSec, int finalStatementSec, int discussionSec, int dayVoteSec) {
             this.nightMafiaSec = nightMafiaSec;
             this.nightSheriffSec = nightSheriffSec;
             this.nightDoctorSec = nightDoctorSec;
             this.nightVigilanteSec = nightVigilanteSec;
             this.morningSec = morningSec;
+            this.finalStatementSec = finalStatementSec;
             this.discussionSec = discussionSec;
             this.dayVoteSec = dayVoteSec;
         }
@@ -1334,6 +1487,7 @@ public class Main {
             m.put("nightDoctorSec", nightDoctorSec);
             m.put("nightVigilanteSec", nightVigilanteSec);
             m.put("morningSec", morningSec);
+            m.put("finalStatementSec", finalStatementSec);
             m.put("discussionSec", discussionSec);
             m.put("dayVoteSec", dayVoteSec);
             return m;

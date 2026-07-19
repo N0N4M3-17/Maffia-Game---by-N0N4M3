@@ -94,10 +94,28 @@
                 <label>Network mode<select name="networkMode"><option value="local">Local LAN</option><option value="internet">Internet-ready</option></select></label>
                 <button class="primary-button" type="submit">Create room</button>
               </form>
-              <div class="share-box">
-                <span>Local</span><code id="local-url">http://localhost:3000</code>
-                <span>LAN</span><code id="lan-url">Detecting...</code>
-                <span>Public</span><code id="public-url">Set PUBLIC_URL when reverse proxied with HTTPS</code>
+              <div class="share-box" aria-label="Server invite links">
+                <div class="share-row">
+                  <div>
+                    <span>Local host</span>
+                    <code id="local-url">http://localhost:3000</code>
+                  </div>
+                  <button class="ghost-button copy-link" type="button" data-copy-target="local-url">Copy</button>
+                </div>
+                <div class="share-row">
+                  <div>
+                    <span>LAN invite</span>
+                    <code id="lan-url">Detecting...</code>
+                  </div>
+                  <button class="ghost-button copy-link" type="button" data-copy-target="lan-url">Copy</button>
+                </div>
+                <div class="share-row">
+                  <div>
+                    <span>Secure public invite <em id="public-status">Not configured</em></span>
+                    <code id="public-url">Set PUBLIC_URL when reverse proxied with HTTPS</code>
+                  </div>
+                  <button class="ghost-button copy-link" type="button" data-copy-target="public-url">Copy</button>
+                </div>
               </div>
             </section>
           </div>
@@ -233,16 +251,36 @@
         </div>
 
         <div id="tab-admin" class="tab">
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <p class="eyebrow">Local registry</p>
-                <h3>Player base</h3>
+          <div class="content-grid admin-grid">
+            <section class="panel">
+              <p class="eyebrow">Create</p>
+              <h3>Add player</h3>
+              <form id="admin-create-user-form" class="form-stack">
+                <label>Display name<input name="displayName" maxlength="32" required></label>
+                <label>Username<input name="username" maxlength="24" required></label>
+                <label>Email<input name="email" type="email" required></label>
+                <label>Password<input name="password" type="password" minlength="6" required></label>
+                <div class="score-editor">
+                  <label>Games<input name="scoreGames" type="number" min="0" value="0"></label>
+                  <label>Wins<input name="scoreWins" type="number" min="0" value="0"></label>
+                  <label>Losses<input name="scoreLosses" type="number" min="0" value="0"></label>
+                </div>
+                <label class="toggle-row"><input name="isAdmin" type="checkbox"> Admin account</label>
+                <button class="primary-button" type="submit">Create player</button>
+              </form>
+            </section>
+
+            <section class="panel admin-list-panel">
+              <div class="panel-title">
+                <div>
+                  <p class="eyebrow">Local registry</p>
+                  <h3>Player base</h3>
+                </div>
+                <button id="refresh-users-btn" class="secondary-button">Refresh</button>
               </div>
-              <button id="refresh-users-btn" class="secondary-button">Refresh</button>
-            </div>
-            <div id="admin-users" class="admin-users"></div>
-          </section>
+              <div id="admin-users" class="admin-users"></div>
+            </section>
+          </div>
         </div>
 
         <p id="app-message" class="message"></p>

@@ -3,7 +3,7 @@ const state = {
   playerId: localStorage.getItem('playerId') || null,
   roles: { mafia: 2, sheriff: 1, doctor: 1, vigilante: 0, town: 1 },
   vigilanteShots: 1,
-  timerSettings: { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, discussionSec: 60, dayVoteSec: 60 },
+  timerSettings: { nightMafiaSec: 60, nightSheriffSec: 60, nightDoctorSec: 60, nightVigilanteSec: 60, morningSec: 60, finalStatementSec: 45, discussionSec: 60, dayVoteSec: 60 },
   publicDayVoteTally: true,
   rooms: [],
   serverInfo: {},
@@ -29,6 +29,7 @@ const timerLabels = {
   nightDoctorSec: 'Doctor',
   nightVigilanteSec: 'Vigilante',
   morningSec: 'Morning',
+  finalStatementSec: 'Final words',
   discussionSec: 'Discussion',
   dayVoteSec: 'Vote',
 };
@@ -159,6 +160,8 @@ async function refreshServerInfo() {
   $('local-url').textContent = state.serverInfo.localhost || '';
   $('lan-url').textContent = state.serverInfo.lanUrls?.[0] || 'No LAN address detected';
   $('public-url').textContent = state.serverInfo.publicUrl || 'Set PUBLIC_URL when reverse proxied with HTTPS';
+  $('public-status').textContent = state.serverInfo.publicUrlSecure ? 'HTTPS ready' : 'Not configured';
+  $('public-status').classList.toggle('ok', !!state.serverInfo.publicUrlSecure);
 }
 
 async function refreshRooms() {
@@ -176,7 +179,7 @@ function renderRooms() {
   list.innerHTML = state.rooms.map((room) => `
     <article class="room-row">
       <div>
-        <strong>${escapeHtml(room.name)}</strong>
+        <strong>${escapeHtml(room.name)}${room.active ? ' <em>Active</em>' : ''}</strong>
         <span>${room.networkMode === 'internet' ? 'Internet-ready' : 'Local LAN'}</span>
       </div>
       <button class="secondary-button" data-room-join="${room.id}">Join</button>
@@ -200,6 +203,25 @@ async function joinRoom(roomId) {
   showTab('play');
   await refreshAll();
   setMessage(`Joined ${data.room?.name || 'room'}.`);
+}
+
+async function copyInvite(targetId) {
+  const text = $(targetId)?.textContent?.trim() || '';
+  if (!text || text.startsWith('Set PUBLIC_URL') || text.includes('No LAN address')) {
+    setMessage('No invite link is available for that slot yet.', true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const input = document.createElement('input');
+    input.value = text;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+  }
+  setMessage('Invite link copied.');
 }
 
 function roleTotal() {
@@ -333,6 +355,8 @@ async function refreshGm() {
     remaining: gm.phaseRemainingSec,
     winner: gm.winner,
     morningDeaths: gm.morningDeaths,
+    finalStatementPending: gm.finalStatementPending,
+    finalStatements: gm.finalStatements,
     mafiaVotesPending: gm.pendingMafiaVotes,
     dayVotesPending: gm.pendingDayVotes,
     dayVoteTally: gm.dayVoteTally,
@@ -348,6 +372,7 @@ function phaseTitle(phase, round) {
     night_doctor: `Night ${round}: Doctor`,
     night_vigilante: `Night ${round}: Vigilante`,
     morning: 'Morning report',
+    final_statements: 'Final statements',
     discussion: 'Discussion',
     day_vote: 'Day vote',
     game_over: 'Game over',
@@ -399,7 +424,10 @@ async function refreshPlayer() {
 
 function renderRole(ps) {
   $('role-name').textContent = (ps.role || 'Waiting').toUpperCase();
-  $('role-desc').textContent = ps.roleDescription || 'Role appears after the host launches the game.';
+  const team = ps.role === 'Mafia' && ps.mafiaTeam?.length
+    ? ` Team: ${ps.mafiaTeam.map((mate) => mate.name).join(', ')}.`
+    : '';
+  $('role-desc').textContent = `${ps.roleDescription || 'Role appears after the host launches the game.'}${team}`;
   $('vigi-ammo').textContent = ps.role === 'Vigilante' ? `Shots remaining: ${ps.vigilanteShotsRemaining}` : '';
   if (state.roleReveal.lastPhase !== ps.phase) {
     state.roleReveal = { revealed: ps.phase !== 'night0', acknowledged: false, lastPhase: ps.phase };
@@ -421,12 +449,19 @@ function targetOptions(ps, includeAbstain = false, allowSelf = false) {
 }
 
 function actionMarkup(ps) {
+  if (ps.phase === 'final_statements') {
+    if (ps.finalStatementEligible && !ps.finalStatementSubmitted) {
+      return '<div class="form-stack"><textarea id="final-statement-input" maxlength="240" placeholder="Your final statement"></textarea><button class="primary-button" data-action="submit-final">Submit final statement</button><p class="muted">One message, max 240 characters.</p></div>';
+    }
+    if (ps.finalStatementEligible) return '<p class="muted">Final statement submitted. Waiting for the table.</p>';
+    return '<p class="muted">Final statements are in progress. Listen carefully.</p>';
+  }
   if (!ps.alive) return '<p class="danger-text">You are dead. Observe only.</p>';
   if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return actionSelect('submit-mafia', targetOptions(ps), 'Submit mafia vote', `${ps.pendingMafiaVotes || 0} mafia pending.`);
   if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return actionSelect('submit-sheriff', targetOptions(ps), 'Investigate', ps.sheriffResult ? `Result: ${escapeHtml(ps.sheriffResult)}` : 'No result yet.');
   if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return actionSelect('submit-doctor', targetOptions(ps, false, true), 'Protect', 'You may protect yourself, but not repeat last target.');
   if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return actionSelect('submit-vigilante', targetOptions(ps, true), 'Shoot / skip', 'Leave blank to skip.');
-  if (ps.phase === 'day_vote') return actionSelect('submit-day', targetOptions(ps, true), 'Submit vote', `${ps.pendingDayVotes || 0} players pending.`);
+  if (ps.phase === 'day_vote') return actionSelect('submit-day', targetOptions(ps, true), 'Submit vote', `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`);
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
   if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;
@@ -438,7 +473,7 @@ function actionSelect(action, options, label, hint) {
 }
 
 function renderPlayerAction(ps) {
-  const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}`;
+  const actionKey = `${ps.phase}|${ps.role}|${ps.alive}|${ps.mafiaVoteSubmitted}|${ps.dayVoteSubmitted}|${ps.pendingMafiaVotes}|${ps.pendingDayVotes}|${ps.sheriffResult}|${ps.finalStatementEligible}|${ps.finalStatementSubmitted}`;
   if (state.lastActionRenderKey === actionKey) return;
   state.lastActionRenderKey = actionKey;
   $('player-action-panel').innerHTML = actionMarkup(ps);
@@ -475,7 +510,19 @@ async function submitAction(action) {
     'submit-vigilante': '/api/player/vigilante-shoot',
     'submit-day': '/api/player/day-vote',
   };
-  await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
+  if (action === 'submit-final') {
+    const message = $('final-statement-input')?.value.trim() || '';
+    if (!message) {
+      setMessage('Final statement cannot be empty.', true);
+      return;
+    }
+    await api('/api/player/chat', { method: 'POST', body: JSON.stringify({ playerId: state.playerId, message }) });
+    state.lastActionRenderKey = '';
+    await refreshPlayer();
+    return;
+  }
+  const result = await api(paths[action], { method: 'POST', body: JSON.stringify({ playerId: state.playerId, targetId }) });
+  if (result.locked) setMessage(`Vote locked. Advanced to ${phaseTitle(result.phase, '')}.`);
   state.lastActionRenderKey = '';
   await refreshPlayer();
 }
@@ -555,6 +602,21 @@ async function refreshAdminUsers() {
   }));
 }
 
+async function createAdminUser(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  values.isAdmin = form.elements.isAdmin.checked;
+  values.scoreGames = Number(values.scoreGames || 0);
+  values.scoreWins = Number(values.scoreWins || 0);
+  values.scoreLosses = Number(values.scoreLosses || 0);
+  await api('/api/admin/users', { method: 'POST', body: JSON.stringify(values) });
+  form.reset();
+  form.elements.scoreGames.value = '0';
+  form.elements.scoreWins.value = '0';
+  form.elements.scoreLosses.value = '0';
+  await refreshAdminUsers();
+  setMessage('Player account created.');
+}
+
 async function refreshAll() {
   if (!state.account) return;
   await Promise.all([
@@ -583,9 +645,11 @@ function bindEvents() {
   $('logout-btn').addEventListener('click', () => logout().catch((err) => setMessage(err.message, true)));
   $('room-form').addEventListener('submit', (e) => { e.preventDefault(); createRoom(e.currentTarget).catch((err) => setMessage(err.message, true)); });
   $('refresh-rooms-btn').addEventListener('click', () => refreshRooms().catch((err) => setMessage(err.message, true)));
+  document.querySelectorAll('[data-copy-target]').forEach((btn) => btn.addEventListener('click', () => copyInvite(btn.dataset.copyTarget)));
   $('join-default-btn').addEventListener('click', () => {
-    const room = state.rooms[0];
+    const room = state.rooms.find((candidate) => candidate.active) || state.rooms[0];
     if (room) joinRoom(room.id).catch((err) => setMessage(err.message, true));
+    else setMessage('No room is available yet.', true);
   });
   $('save-setup-btn').addEventListener('click', () => saveSetup().catch((err) => setMessage(err.message, true)));
   $('launch-game-btn').addEventListener('click', () => launchGame().catch((err) => setMessage(err.message, true)));
@@ -599,6 +663,7 @@ function bindEvents() {
   $('mafia-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('mafia').catch((err) => setMessage(err.message, true)); });
   $('player-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('player').catch((err) => setMessage(err.message, true)); });
   $('profile-form').addEventListener('submit', (e) => { e.preventDefault(); saveProfile(e.currentTarget).catch((err) => setMessage(err.message, true)); });
+  $('admin-create-user-form').addEventListener('submit', (e) => { e.preventDefault(); createAdminUser(e.currentTarget).catch((err) => setMessage(err.message, true)); });
   $('refresh-users-btn').addEventListener('click', () => refreshAdminUsers().catch((err) => setMessage(err.message, true)));
 }
 

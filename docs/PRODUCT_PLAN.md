@@ -52,7 +52,7 @@ The release gate is all of the following:
 | Player/GM experience | **Partially implemented** | 70% | Functional responsive UI and GM observability exist; onboarding, accessibility, and polish remain. |
 | Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
 | Release operations and documentation | **In progress** | 35% | Basic Java launch instructions exist; packaging, troubleshooting, and GM runbook are missing. |
-| Local accounts, rooms, profiles, and admin | **In progress** | 55% | Local account registry, password hashing, seeded admin, named rooms, profiles, and admin editing are being implemented; multi-room independent game state and public hosting hardening remain. |
+| Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
 
 ## 4. Milestones and Goalposts
 
@@ -86,18 +86,18 @@ The release gate is all of the following:
 - [x] Night resolution applies protection before mafia and vigilante attacks, allowing simultaneous deaths.
 - [x] Day voting supports target selection or abstention, resolution, role reveal, and a configurable public vote log.
 - [x] Win checks declare Town when no Mafia remain and Mafia when alive Mafia are at least the alive non-Mafia count.
-- [ ] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
+- [x] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
 - [ ] Verify all role, tie, abstention, protection, and timer edge cases against executable tests.
 
 **Exit mark:** A facilitator can run one complete round without manual calculation.
-**Remaining to close:** Resolve the final-statements specification decision and test the rule engine.
+**Remaining to close:** Add executable rule-engine tests for the final-statements, vote, role, protection, timer, and abstention paths.
 
 ### M3 — Rules parity, privacy, and resilience: next priority
 
 - [ ] Restrict general player chat to the intended phases and block dead players, matching the documented permission matrix.
 - [ ] Confirm all player-state payloads expose only role-authorized information in every phase.
 - [ ] Decide and document the final day-vote rule: strict majority (as specified) versus current plurality behavior; then enforce and test it consistently.
-- [ ] Define early-lock behavior for mafia and day votes, or remove it from the specification.
+- [x] Define early-lock behavior for mafia and day votes, or remove it from the specification.
 - [ ] Add a clear reconnect/session-recovery policy; preserve a player's identity across accidental refreshes where feasible.
 - [ ] Add input limits, duplicate-name policy, error messages, and basic abuse/rate protections appropriate for a LAN host.
 
