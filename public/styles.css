@@ -275,6 +275,14 @@ code {
   grid-template-columns: minmax(280px, .8fr) minmax(320px, 1fr) minmax(280px, .9fr);
 }
 
+.admin-grid {
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+}
+
+.admin-list-panel {
+  min-width: 0;
+}
+
 .chat-panel {
   grid-column: span 3;
 }
@@ -622,6 +630,12 @@ code {
   gap: 10px;
 }
 
+.score-editor {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
 .score-grid div {
   min-height: 112px;
   display: grid;
@@ -716,7 +730,7 @@ code {
     padding-top: 20px;
   }
 
-  .auth-grid, .rooms-grid, .profile-grid, .host-grid, .play-grid {
+  .auth-grid, .rooms-grid, .profile-grid, .host-grid, .play-grid, .admin-grid {
     grid-template-columns: 1fr;
   }
 
@@ -750,6 +764,10 @@ code {
   }
 
   .score-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .score-editor {
     grid-template-columns: 1fr;
   }
 

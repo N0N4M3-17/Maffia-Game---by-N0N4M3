@@ -251,16 +251,36 @@
         </div>
 
         <div id="tab-admin" class="tab">
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <p class="eyebrow">Local registry</p>
-                <h3>Player base</h3>
+          <div class="content-grid admin-grid">
+            <section class="panel">
+              <p class="eyebrow">Create</p>
+              <h3>Add player</h3>
+              <form id="admin-create-user-form" class="form-stack">
+                <label>Display name<input name="displayName" maxlength="32" required></label>
+                <label>Username<input name="username" maxlength="24" required></label>
+                <label>Email<input name="email" type="email" required></label>
+                <label>Password<input name="password" type="password" minlength="6" required></label>
+                <div class="score-editor">
+                  <label>Games<input name="scoreGames" type="number" min="0" value="0"></label>
+                  <label>Wins<input name="scoreWins" type="number" min="0" value="0"></label>
+                  <label>Losses<input name="scoreLosses" type="number" min="0" value="0"></label>
+                </div>
+                <label class="toggle-row"><input name="isAdmin" type="checkbox"> Admin account</label>
+                <button class="primary-button" type="submit">Create player</button>
+              </form>
+            </section>
+
+            <section class="panel admin-list-panel">
+              <div class="panel-title">
+                <div>
+                  <p class="eyebrow">Local registry</p>
+                  <h3>Player base</h3>
+                </div>
+                <button id="refresh-users-btn" class="secondary-button">Refresh</button>
               </div>
-              <button id="refresh-users-btn" class="secondary-button">Refresh</button>
-            </div>
-            <div id="admin-users" class="admin-users"></div>
-          </section>
+              <div id="admin-users" class="admin-users"></div>
+            </section>
+          </div>
         </div>
 
         <p id="app-message" class="message"></p>

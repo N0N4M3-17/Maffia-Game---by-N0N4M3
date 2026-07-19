@@ -602,6 +602,21 @@ async function refreshAdminUsers() {
   }));
 }
 
+async function createAdminUser(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  values.isAdmin = form.elements.isAdmin.checked;
+  values.scoreGames = Number(values.scoreGames || 0);
+  values.scoreWins = Number(values.scoreWins || 0);
+  values.scoreLosses = Number(values.scoreLosses || 0);
+  await api('/api/admin/users', { method: 'POST', body: JSON.stringify(values) });
+  form.reset();
+  form.elements.scoreGames.value = '0';
+  form.elements.scoreWins.value = '0';
+  form.elements.scoreLosses.value = '0';
+  await refreshAdminUsers();
+  setMessage('Player account created.');
+}
+
 async function refreshAll() {
   if (!state.account) return;
   await Promise.all([
@@ -647,6 +662,7 @@ function bindEvents() {
   $('mafia-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('mafia').catch((err) => setMessage(err.message, true)); });
   $('player-chat-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat('player').catch((err) => setMessage(err.message, true)); });
   $('profile-form').addEventListener('submit', (e) => { e.preventDefault(); saveProfile(e.currentTarget).catch((err) => setMessage(err.message, true)); });
+  $('admin-create-user-form').addEventListener('submit', (e) => { e.preventDefault(); createAdminUser(e.currentTarget).catch((err) => setMessage(err.message, true)); });
   $('refresh-users-btn').addEventListener('click', () => refreshAdminUsers().catch((err) => setMessage(err.message, true)));
 }
 

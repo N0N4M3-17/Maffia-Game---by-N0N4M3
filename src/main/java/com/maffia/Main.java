@@ -184,6 +184,37 @@ public class Main {
                 return;
             }
 
+            if ("POST".equals(method) && "/api/admin/users".equals(path)) {
+                Account admin = requireAdmin(ex);
+                if (admin == null) return;
+                JsonObject b = readBodyJson(ex);
+                String email = text(b, "email").toLowerCase();
+                String username = text(b, "username");
+                String displayName = text(b, "displayName");
+                String password = text(b, "password");
+                String error = validateRegistration(email, username, password);
+                if (error != null) {
+                    writeJson(ex, 400, Map.of("error", error));
+                    return;
+                }
+                if (displayName.isBlank() || displayName.length() > 32) {
+                    writeJson(ex, 400, Map.of("error", "Display name must be 1-32 characters."));
+                    return;
+                }
+                if (DB.findAccountByLogin(email) != null || DB.findAccountByLogin(username) != null) {
+                    writeJson(ex, 409, Map.of("error", "Email or username is already registered."));
+                    return;
+                }
+                Account created = Account.create(email, username, displayName, password, b.has("isAdmin") && b.get("isAdmin").getAsBoolean());
+                if (b.has("scoreWins")) created.scoreWins = Math.max(0, b.get("scoreWins").getAsInt());
+                if (b.has("scoreLosses")) created.scoreLosses = Math.max(0, b.get("scoreLosses").getAsInt());
+                if (b.has("scoreGames")) created.scoreGames = Math.max(created.scoreWins + created.scoreLosses, b.get("scoreGames").getAsInt());
+                DB.data.accounts.add(created);
+                DB.save();
+                writeJson(ex, 201, Map.of("user", adminAccountPayload(created)));
+                return;
+            }
+
             if ("PUT".equals(method) && path.startsWith("/api/admin/users/")) {
                 Account admin = requireAdmin(ex);
                 if (admin == null) return;

@@ -21,7 +21,7 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - Java backend host for LAN browser play.
 - Persistent local account registry with email/username login.
 - Seeded local admin account: `gabi17hun@gmail.com` / `n0n4m3-admin` with password `admin123`.
-- Browser admin screen for editing the local player base, scores, usernames, emails, and passwords.
+- Browser admin screen for creating, editing, and deleting the local player base, scores, usernames, emails, and passwords.
 - Named room list with local LAN and internet-ready room modes; one room is the active hosted table at a time.
 - Profile settings with display-name changes, score history, and max 100x100 profile image uploads.
 - GM-hosted room lobby in browser.
