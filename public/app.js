@@ -647,8 +647,9 @@ function bindEvents() {
   $('refresh-rooms-btn').addEventListener('click', () => refreshRooms().catch((err) => setMessage(err.message, true)));
   document.querySelectorAll('[data-copy-target]').forEach((btn) => btn.addEventListener('click', () => copyInvite(btn.dataset.copyTarget)));
   $('join-default-btn').addEventListener('click', () => {
-    const room = state.rooms[0];
+    const room = state.rooms.find((candidate) => candidate.active) || state.rooms[0];
     if (room) joinRoom(room.id).catch((err) => setMessage(err.message, true));
+    else setMessage('No room is available yet.', true);
   });
   $('save-setup-btn').addEventListener('click', () => saveSetup().catch((err) => setMessage(err.message, true)));
   $('launch-game-btn').addEventListener('click', () => launchGame().catch((err) => setMessage(err.message, true)));

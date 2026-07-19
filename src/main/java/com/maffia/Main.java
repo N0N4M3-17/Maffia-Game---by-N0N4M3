@@ -260,7 +260,14 @@ public class Main {
                     }
                     target.email = email;
                 }
-                if (b.has("isAdmin")) target.isAdmin = b.get("isAdmin").getAsBoolean();
+                if (b.has("isAdmin")) {
+                    boolean nextAdmin = b.get("isAdmin").getAsBoolean();
+                    if (!nextAdmin && target.isAdmin && DB.adminCount() <= 1) {
+                        writeJson(ex, 400, Map.of("error", "At least one admin account must remain."));
+                        return;
+                    }
+                    target.isAdmin = nextAdmin;
+                }
                 if (b.has("scoreWins")) target.scoreWins = Math.max(0, b.get("scoreWins").getAsInt());
                 if (b.has("scoreLosses")) target.scoreLosses = Math.max(0, b.get("scoreLosses").getAsInt());
                 if (b.has("scoreGames")) target.scoreGames = Math.max(target.scoreWins + target.scoreLosses, b.get("scoreGames").getAsInt());
@@ -276,6 +283,11 @@ public class Main {
                 String id = path.substring("/api/admin/users/".length());
                 if (admin.id.equals(id)) {
                     writeJson(ex, 400, Map.of("error", "The signed-in admin cannot delete themselves."));
+                    return;
+                }
+                Account target = DB.findAccount(id);
+                if (target != null && target.isAdmin && DB.adminCount() <= 1) {
+                    writeJson(ex, 400, Map.of("error", "At least one admin account must remain."));
                     return;
                 }
                 boolean removed = DB.data.accounts.removeIf(a -> a.id.equals(id));
@@ -1314,6 +1326,10 @@ public class Main {
                     .filter(a -> a.email.equalsIgnoreCase(normalized) || a.username.equalsIgnoreCase(normalized))
                     .findFirst()
                     .orElse(null);
+        }
+
+        long adminCount() {
+            return data.accounts.stream().filter(a -> a.isAdmin).count();
         }
 
         Room findRoom(String id) {

@@ -35,6 +35,7 @@ const html = read('src/main/resources/public/index.html');
 const app = read('src/main/resources/public/app.js');
 assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKDF2-HMAC-SHA256');
 assert(backend.includes('"POST".equals(method) && "/api/admin/users".equals(path)'), 'admin must be able to create user accounts');
+assert(backend.includes('adminCount()') && backend.includes('At least one admin account must remain.'), 'admin management must prevent last-admin lockout');
 assert(backend.includes('majorityTarget(STATE.dayVotes, aliveCount())'), 'day vote resolution must use strict majority');
 assert(backend.includes('payload.put("mafiaTeam"'), 'mafia teammate identities must be in private mafia payload');
 assert(backend.includes('PUBLIC_CHAT_PHASES'), 'public chat phase restrictions must be server-side');
@@ -50,6 +51,7 @@ assert(html.includes('admin-create-user-form'), 'admin create-user form must exi
 assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText'), 'invite copy action must be wired');
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
+assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
 
 if (!process.exitCode) {
