@@ -71,6 +71,8 @@ assert(backend.includes('PUBLIC_URL') && backend.includes('publicUrlSecure'), 's
 assert(html.includes('data-copy-target="lan-url"') && html.includes('data-copy-target="public-url"'), 'invite links must have copy controls');
 assert(html.includes('admin-create-user-form'), 'admin create-user form must exist');
 assert(html.includes('action-panel-shell') && html.includes('table-panel'), 'play screen must expose dedicated action/table layout regions');
+assert(html.includes('gm-phase-guide') && html.includes('player-phase-guide'), 'GM and player screens must expose phase guidance regions');
+assert(html.includes('gm-setup-panel') && html.includes('gm-timer-panel') && html.includes('gm-console-panel'), 'Host screen must separate setup, timers, and GM console regions');
 assert(app.includes('copyInvite') && app.includes('navigator.clipboard.writeText'), 'invite copy action must be wired');
 assert(app.includes('submit-final') && app.includes('final-statement-input'), 'final statement action must be wired in the UI');
 assert(app.includes('target-tile') && app.includes('data-target-id') && !app.includes('function actionSelect'), 'player actions must use clickable target tiles instead of dropdown selects');
@@ -78,6 +80,9 @@ assert(app.includes('ps.round') && app.includes('doctorProtectCurrent') && app.i
 assert(app.includes('Doctor rule: you cannot protect the same target') && app.includes('lastDoctorTarget'), 'doctor repeat-target warning must be wired');
 assert(app.includes('sheriffResultMarkup') && app.includes('sheriffResultTargetName') && app.includes('Mafia alignment confirmed'), 'sheriff result visual must be wired');
 assert(app.includes('life-badge'), 'player list must use explicit alive/dead status badges');
+assert(app.includes('gmGuidanceMarkup') && app.includes('playerGuidanceMarkup') && app.includes('Vote submitted'), 'GM and player phase guidance must be wired');
+assert(app.includes("gm.phase === 'lobby' || gm.phase === 'game_over'") && app.includes('gmConsoleMarkup') && !app.includes("'gm-action-status').textContent = JSON.stringify"), 'GM active-round feed must be rendered as UI instead of raw JSON');
+assert(app.includes("chatPreview('Mafia channel'") && app.includes("chatPreview('Public channel'") && app.includes('Day vote tally'), 'GM console must include separated chats and action summaries');
 assert(app.includes('createAdminUser') && app.includes("'/api/admin/users'"), 'admin create-user action must be wired');
 assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.rooms[0]'), 'join shortcut must prefer the active hosted room');
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');

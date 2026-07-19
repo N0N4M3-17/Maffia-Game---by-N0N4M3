@@ -340,6 +340,9 @@ async function resetLobby() {
 
 async function refreshGm() {
   const gm = await api('/api/gm-state');
+  const setupVisible = gm.phase === 'lobby' || gm.phase === 'game_over';
+  $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
+  $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
   $('timer-pill').textContent = fmtSec(gm.phaseRemainingSec || 0);
   $('phase-heading').textContent = phaseTitle(gm.phase, gm.round);
@@ -364,18 +367,86 @@ async function refreshGm() {
   }
   updateValidation(gm.playerCount);
   renderRoster(gm.players || []);
-  $('gm-action-status').textContent = JSON.stringify({
-    round: gm.round,
-    phase: gm.phase,
-    remaining: gm.phaseRemainingSec,
-    winner: gm.winner,
-    morningDeaths: gm.morningDeaths,
-    finalStatementPending: gm.finalStatementPending,
-    finalStatements: gm.finalStatements,
-    mafiaVotesPending: gm.pendingMafiaVotes,
-    dayVotesPending: gm.pendingDayVotes,
-    dayVoteTally: gm.dayVoteTally,
-  }, null, 2);
+  $('gm-phase-guide').innerHTML = gmGuidanceMarkup(gm);
+  $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
+}
+
+function statCard(label, value, tone = '') {
+  return `<div class="stat-card ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function chatPreview(title, messages) {
+  const lines = (messages || []).slice(-5).map((m) => `<div><strong>${escapeHtml(m.author)}</strong> ${escapeHtml(m.message)}</div>`).join('');
+  return `
+    <section class="feed-card">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="feed-lines">${lines || '<p class="muted">No messages yet.</p>'}</div>
+    </section>
+  `;
+}
+
+function tallyMarkup(title, tally, players) {
+  const entries = Object.entries(tally || {});
+  return `
+    <section class="feed-card">
+      <h4>${escapeHtml(title)}</h4>
+      <div class="feed-lines">${entries.length ? entries.map(([id, count]) => {
+        const player = players.find((p) => p.id === id);
+        return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${count} vote(s)</div>`;
+      }).join('') : '<p class="muted">No votes locked in yet.</p>'}</div>
+    </section>
+  `;
+}
+
+function gmConsoleMarkup(gm) {
+  const players = gm.players || [];
+  const deaths = gm.morningDeaths?.length
+    ? gm.morningDeaths.map((d) => `<div><strong>${escapeHtml(d.name)}</strong> ${escapeHtml(d.role || 'Unknown')}</div>`).join('')
+    : '<p class="muted">No announced deaths.</p>';
+  const finals = Object.entries(gm.finalStatements || {}).map(([id, message]) => {
+    const player = players.find((p) => p.id === id);
+    return `<div><strong>${escapeHtml(player?.name || id)}</strong> ${escapeHtml(message)}</div>`;
+  }).join('');
+  return `
+    <div class="gm-stat-grid">
+      ${statCard('Round', gm.round ?? 0)}
+      ${statCard('Alive', `${gm.aliveCount || 0}/${gm.playerCount || 0}`, 'ok')}
+      ${statCard('Mafia pending', gm.pendingMafiaVotes ?? 0)}
+      ${statCard('Day votes pending', gm.pendingDayVotes ?? 0)}
+    </div>
+    <div class="gm-feed-grid">
+      <section class="feed-card">
+        <h4>Night / vote outcomes</h4>
+        <div class="feed-lines">${deaths}</div>
+      </section>
+      <section class="feed-card">
+        <h4>Final statements</h4>
+        <div class="feed-lines">${finals || '<p class="muted">No final statements submitted.</p>'}</div>
+      </section>
+      ${tallyMarkup('Day vote tally', gm.dayVoteTally, players)}
+      ${chatPreview('Mafia channel', gm.mafiaChat)}
+      ${chatPreview('Public channel', gm.playerChat)}
+    </div>
+  `;
+}
+
+function gmGuidanceMarkup(gm) {
+  const deaths = gm.morningDeaths?.length ? gm.morningDeaths.map((d) => d.name).join(', ') : '';
+  const guides = {
+    lobby: ['Seat the table', 'Create or select the room, confirm players, save role counts, then launch roles.'],
+    night0: ['Private role reveal', 'Give players time to reveal and confirm roles. Start night when the table is ready.'],
+    night_mafia: ['Mafia action', `${gm.pendingMafiaVotes || 0} Mafia vote(s) still pending. The phase can auto-advance on timer or majority lock.`],
+    night_sheriff: ['Sheriff action', 'The Sheriff chooses one alive player. The result stays private to the Sheriff.'],
+    night_doctor: ['Doctor action', 'The Doctor protects one alive player and cannot repeat last night\'s target.'],
+    night_vigilante: ['Vigilante action', 'The Vigilante may shoot one alive non-self target or skip to save the shot.'],
+    morning: ['Resolve the night', deaths ? `Announce night deaths: ${deaths}.` : 'Announce that no one died overnight.'],
+    final_statements: ['Final statements', `${gm.finalStatementPending || 0} final statement(s) still pending.`],
+    discussion: ['Table discussion', 'Let alive players discuss. Move to voting when the room is ready or when the timer expires.'],
+    day_vote: ['Day voting', `${gm.pendingDayVotes || 0} alive player vote(s) still pending. Strict majority is required for elimination.`],
+    game_over: ['Game over', `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
+  };
+  const [title, body] = guides[gm.phase] || ['Current phase', gm.phase || 'Waiting for game state.'];
+  return `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
 }
 
 function phaseTitle(phase, round) {
@@ -418,6 +489,7 @@ async function refreshPlayer() {
   if (!state.playerId) {
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
+    $('player-phase-guide').innerHTML = '<strong>Take a seat</strong><span>Join the current room to enter the table.</span>';
     $('player-action-panel').innerHTML = '<p class="muted">Join a room to receive actions.</p>';
     return;
   }
@@ -426,6 +498,7 @@ async function refreshPlayer() {
     $('join-state').classList.add('hidden');
     $('role-state').classList.remove('hidden');
     renderRole(ps);
+    $('player-phase-guide').innerHTML = playerGuidanceMarkup(ps);
     renderPlayerAction(ps);
     renderPlayerList(ps.players || []);
     renderChats(ps);
@@ -439,7 +512,49 @@ async function refreshPlayer() {
     }
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
+    $('player-phase-guide').innerHTML = '<strong>Seat lost</strong><span>Join the current room again to reconnect.</span>';
   }
+}
+
+function playerGuidanceMarkup(ps) {
+  if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(ps.winner || 'unknown')}. Your score has been recorded.</span>`;
+  if (!ps.alive && ps.phase !== 'final_statements') return '<strong>Observe only</strong><span>You are out of the round. Watch the table and keep private information private.</span>';
+  if (ps.phase === 'night0') return '<strong>Role reveal</strong><span>Reveal privately, confirm when ready, then wait for the GM.</span>';
+  if (ps.phase === 'night_mafia') {
+    if (ps.role === 'Mafia') return ps.mafiaVoteSubmitted
+      ? `<strong>Vote submitted</strong><span>${ps.pendingMafiaVotes || 0} Mafia vote(s) still pending.</span>`
+      : '<strong>Mafia vote</strong><span>Choose an alive target with your team, then submit.</span>';
+    return '<strong>Night action</strong><span>Wait silently while Mafia acts.</span>';
+  }
+  if (ps.phase === 'night_sheriff') {
+    if (ps.role === 'Sheriff') return ps.sheriffResult
+      ? '<strong>Investigation complete</strong><span>Your result is shown below. Keep it private until discussion.</span>'
+      : '<strong>Investigate</strong><span>Choose one alive player to inspect.</span>';
+    return '<strong>Night action</strong><span>Wait silently while the Sheriff acts.</span>';
+  }
+  if (ps.phase === 'night_doctor') {
+    if (ps.role === 'Doctor') return ps.doctorProtectCurrent
+      ? '<strong>Protection submitted</strong><span>Your protected target is selected below.</span>'
+      : '<strong>Protect</strong><span>Choose one alive player. You cannot repeat last night.</span>';
+    return '<strong>Night action</strong><span>Wait silently while the Doctor acts.</span>';
+  }
+  if (ps.phase === 'night_vigilante') {
+    if (ps.role === 'Vigilante') return ps.vigilanteTargetCurrent
+      ? '<strong>Shot submitted</strong><span>Your target is selected below.</span>'
+      : '<strong>Vigilante choice</strong><span>Choose a target or skip to save your shot.</span>';
+    return '<strong>Night action</strong><span>Wait silently while the Vigilante acts.</span>';
+  }
+  if (ps.phase === 'morning') return '<strong>Morning report</strong><span>Review what happened overnight, then prepare for discussion.</span>';
+  if (ps.phase === 'final_statements') {
+    if (ps.finalStatementEligible && !ps.finalStatementSubmitted) return '<strong>Final words</strong><span>You may send one final public statement.</span>';
+    if (ps.finalStatementEligible) return '<strong>Final words sent</strong><span>Wait for the table to continue.</span>';
+    return '<strong>Final statements</strong><span>Listen while eliminated players speak.</span>';
+  }
+  if (ps.phase === 'discussion') return '<strong>Discussion open</strong><span>Talk at the table or use public chat. Watch the timer.</span>';
+  if (ps.phase === 'day_vote') return ps.dayVoteSubmitted
+    ? `<strong>Vote submitted</strong><span>${ps.pendingDayVotes || 0} alive player vote(s) still pending.</span>`
+    : '<strong>Day vote</strong><span>Choose an alive player or abstain. Strict majority is required.</span>';
+  return '<strong>Waiting</strong><span>No action is needed right now.</span>';
 }
 
 function renderRole(ps) {

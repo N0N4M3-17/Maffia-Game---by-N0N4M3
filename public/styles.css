@@ -271,6 +271,10 @@ code {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.host-grid:has(#gm-setup-panel.hidden) {
+  grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr);
+}
+
 .play-grid {
   grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.35fr) minmax(270px, .82fr);
   align-items: start;
@@ -578,6 +582,100 @@ code {
   background: #10141d;
   color: var(--muted);
   border: 1px solid var(--line);
+}
+
+.gm-console {
+  display: grid;
+  gap: 12px;
+}
+
+.gm-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat-card, .feed-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #121722;
+}
+
+.stat-card {
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 12px;
+}
+
+.stat-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stat-card strong {
+  color: var(--gold);
+  font-size: 24px;
+}
+
+.stat-card.ok strong {
+  color: var(--green);
+}
+
+.gm-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.feed-card {
+  min-height: 132px;
+  padding: 12px;
+}
+
+.feed-card h4 {
+  margin: 0 0 8px;
+}
+
+.feed-lines {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.feed-lines div {
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #151923;
+}
+
+.feed-lines strong {
+  color: var(--gold);
+}
+
+.phase-guide {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 14px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(215, 182, 93, .35);
+  background: rgba(215, 182, 93, .09);
+}
+
+.phase-guide:empty {
+  display: none;
+}
+
+.phase-guide strong {
+  color: var(--gold);
+}
+
+.phase-guide span {
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .empty-state {
@@ -908,6 +1006,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .host-grid:has(#gm-setup-panel.hidden) {
+    grid-template-columns: 1fr;
+  }
+
   .role-panel {
     order: 1;
   }
@@ -963,6 +1065,10 @@ code {
   }
 
   .score-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .gm-stat-grid, .gm-feed-grid {
     grid-template-columns: 1fr;
   }
 
