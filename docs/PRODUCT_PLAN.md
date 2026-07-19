@@ -50,7 +50,7 @@ The release gate is all of the following:
 | Day voting and victory | **Implemented** | 85% | Voting, public-tally setting, elimination, and win detection exist; vote-rule acceptance tests are still needed. |
 | Chat and information controls | **Partially implemented** | 65% | Mafia chat is phase-gated; public player chat currently needs phase/dead-player restriction hardening. |
 | Player/GM experience | **Partially implemented** | 89% | Functional responsive UI, animated Night 0 card deal, clickable target cards, doctor warnings, sheriff result visuals, GM/player phase guidance, an active-round GM console, and GM observability exist; accessibility and broader polish remain. |
-| Test automation / quality gate | **Not started** | 0% | There is no test script or automated test suite in the repository. |
+| Test automation / quality gate | **In progress** | 20% | Static checks exist and executable JUnit coverage now covers vote majority, ties, abstentions, plurality helpers, and win-condition decisions; broader role, phase, night-resolution, authorization, and API smoke tests remain. |
 | Release operations and documentation | **In progress** | 65% | Java launch instructions, GM runbook, CI workflow, and release checklist exist; packaging and clean-environment verification remain. |
 | Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
 
@@ -89,6 +89,8 @@ The release gate is all of the following:
 - [x] Win checks declare Town when no Mafia remain and Mafia when alive Mafia are at least the alive non-Mafia count.
 - [x] Add the specified `FINAL_STATEMENTS` state or explicitly remove it from the game specification.
 - [ ] Verify all role, tie, abstention, protection, and timer edge cases against executable tests.
+  - [x] Add executable vote-helper tests for strict majority, ties, abstentions, and unique plurality behavior.
+  - [x] Add executable win-condition tests for Town elimination, Mafia parity, and unresolved games.
 
 **Exit mark:** A facilitator can run one complete round without manual calculation.
 **Remaining to close:** Add executable rule-engine tests for the final-statements, vote, role, protection, timer, and abstention paths.
@@ -123,6 +125,7 @@ The release gate is all of the following:
 ### M5 — v1 release readiness
 
 - [ ] Create automated unit tests for role assignment, phase transitions, night resolution, vote resolution, win conditions, and authorization.
+  - [x] Add the first JUnit rule tests for vote resolution helpers and win-condition decisions.
 - [ ] Add API/integration smoke tests for a complete short game.
 - [ ] Add a documented build/package command.
 - [x] Add a release checklist with clean-host, LAN, secure-public, data/privacy, and known-limitations gates.

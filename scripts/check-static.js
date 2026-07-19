@@ -31,6 +31,8 @@ nodeCheck('src/main/resources/public/app.js');
 nodeCheck('public/app.js');
 
 const backend = read('src/main/java/com/maffia/Main.java');
+const gameRules = read('src/main/java/com/maffia/GameRules.java');
+const gameRulesTest = read('src/test/java/com/maffia/GameRulesTest.java');
 const html = read('src/main/resources/public/index.html');
 const app = read('src/main/resources/public/app.js');
 const readme = read('README.md');
@@ -50,6 +52,10 @@ assert(releaseChecklist.includes('Clean Host Smoke Test') && releaseChecklist.in
 assert(releaseChecklist.includes('PUBLIC_URL=https://your-secure-host.example mvn exec:java'), 'release checklist must cover secure public hosting verification');
 assert(ciWorkflow.includes('actions/setup-java@v4') && ciWorkflow.includes('mvn -q test'), 'CI must run Maven tests with Java');
 assert(ciWorkflow.includes('npm test'), 'CI must run static checks');
+assert(read('pom.xml').includes('junit-jupiter') && read('pom.xml').includes('maven-surefire-plugin'), 'Maven must include JUnit and Surefire for executable tests');
+assert(gameRules.includes('majorityTarget') && gameRules.includes('tallyVotes'), 'vote resolution helpers must live in testable GameRules');
+assert(gameRulesTest.includes('strictMajorityRequiresMoreThanHalfOfAliveVoters') && gameRulesTest.includes('strictMajorityIgnoresAbstentionsAndSkipsNoMajority') && gameRulesTest.includes('tiesDoNotResolveEvenWhenVoteCountMeetsThreshold'), 'JUnit vote tests must cover majority, abstentions, and ties');
+assert(gameRules.includes('winnerFor') && gameRulesTest.includes('mafiaWinsAtParityOrMajority') && gameRulesTest.includes('townWinsOnlyAfterAssignedRolesWhenNoMafiaRemain'), 'JUnit rule tests must cover win-condition decisions');
 assert(backend.includes('PBKDF2WithHmacSHA256'), 'password hashing must use PBKDF2-HMAC-SHA256');
 assert(backend.includes('"POST".equals(method) && "/api/admin/users".equals(path)'), 'admin must be able to create user accounts');
 assert(backend.includes('adminCount()') && backend.includes('At least one admin account must remain.'), 'admin management must prevent last-admin lockout');

@@ -821,9 +821,7 @@ public class Main {
     private static void checkWin() {
         long mafiaAlive = alivePlayersByRole("Mafia").size();
         long townAlive = STATE.players.stream().filter(p -> p.alive && !"Mafia".equals(p.role)).count();
-        String winner = null;
-        if (mafiaAlive == 0 && STATE.players.stream().anyMatch(p -> p.role != null)) winner = "Town";
-        else if (mafiaAlive >= townAlive && mafiaAlive > 0) winner = "Mafia";
+        String winner = GameRules.winnerFor(mafiaAlive, townAlive, STATE.players.stream().anyMatch(p -> p.role != null));
         if (winner != null) {
             STATE.phase = "game_over";
             STATE.winner = winner;
@@ -1199,30 +1197,11 @@ public class Main {
     }
 
     private static String majorityTarget(Map<String, String> voteMap, int voterCount) {
-        int needed = (voterCount / 2) + 1;
-        Map<String, Integer> counts = new HashMap<>();
-        for (String t : voteMap.values()) if (t != null) counts.put(t, counts.getOrDefault(t, 0) + 1);
-        return winningTarget(counts, needed);
+        return GameRules.majorityTarget(voteMap, voterCount);
     }
 
     private static String pluralityTarget(Map<String, String> voteMap) {
-        Map<String, Integer> counts = new HashMap<>();
-        for (String t : voteMap.values()) if (t != null) counts.put(t, counts.getOrDefault(t, 0) + 1);
-        return winningTarget(counts, 1);
-    }
-
-    private static String winningTarget(Map<String, Integer> counts, int minimum) {
-        String best = null;
-        int bestCount = 0;
-        boolean tie = false;
-        for (Map.Entry<String, Integer> e : counts.entrySet()) {
-            if (e.getValue() > bestCount) {
-                best = e.getKey();
-                bestCount = e.getValue();
-                tie = false;
-            } else if (e.getValue() == bestCount) tie = true;
-        }
-        return bestCount >= minimum && !tie ? best : null;
+        return GameRules.pluralityTarget(voteMap);
     }
 
     private static boolean aliveRoleExists(String role) { return aliveByRole(role) != null; }
