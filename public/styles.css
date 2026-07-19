@@ -263,6 +263,10 @@ code {
 .tab { display: none; }
 .tab.active { display: block; }
 
+.mobile-action-tray {
+  display: none;
+}
+
 .rooms-grid, .profile-grid {
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr);
 }
@@ -1286,6 +1290,56 @@ code {
 
   .workspace {
     padding: 12px;
+  }
+
+  .mobile-action-tray {
+    position: sticky;
+    top: 82px;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin: -2px 0 12px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(18, 23, 34, .96);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .26);
+  }
+
+  .mobile-action-tray div {
+    min-width: 0;
+    min-height: 54px;
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    background: #151923;
+    border: 1px solid rgba(52, 59, 73, .84);
+  }
+
+  .mobile-action-tray span {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .mobile-action-tray strong {
+    min-width: 0;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #tray-timer {
+    color: var(--gold);
+    font-variant-numeric: tabular-nums;
   }
 
   .auth-view {

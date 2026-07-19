@@ -519,6 +519,42 @@ public class Main {
                 return;
             }
 
+            if ("POST".equals(method) && "/api/gm/void".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can void the game."));
+                    return;
+                }
+                if ("lobby".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "No active game to void."));
+                    return;
+                }
+                STATE.phase = "game_over";
+                STATE.winner = "Voided";
+                STATE.phaseEndsAt = 0L;
+                STATE.scoresRecorded = true;
+                pushPlayerChat("SYSTEM", "The GM voided this game. No scores were recorded.");
+                writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase, "winner", STATE.winner));
+                return;
+            }
+
+            if ("POST".equals(method) && "/api/gm/return-lobby".equals(path)) {
+                Account account = requireAccount(ex);
+                if (account == null) return;
+                if (!canManageGame(account)) {
+                    writeJson(ex, 403, Map.of("error", "Only an admin or room host can return to the lobby."));
+                    return;
+                }
+                if (!"game_over".equals(STATE.phase)) {
+                    writeJson(ex, 400, Map.of("error", "Return to lobby is only available after game over."));
+                    return;
+                }
+                STATE.returnToLobbyKeepingSeats();
+                writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
+                return;
+            }
+
             if ("POST".equals(method) && "/api/gm/reset".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
@@ -1472,6 +1508,35 @@ public class Main {
             mafiaChat = new ArrayList<>();
             playerChat = new ArrayList<>();
             publicDayVoteTally = true;
+        }
+
+        void returnToLobbyKeepingSeats() {
+            phase = "lobby";
+            nightStep = "-";
+            round = 0;
+            winner = null;
+            lastSheriffResult = null;
+            phaseEndsAt = 0L;
+            scoresRecorded = false;
+            mafiaVotes = new HashMap<>();
+            sheriffTarget = null;
+            doctorTarget = null;
+            vigilanteTarget = null;
+            dayVotes = new HashMap<>();
+            morningDeaths = new ArrayList<>();
+            finalStatementPlayerIds = new ArrayList<>();
+            finalStatements = new LinkedHashMap<>();
+            afterFinalStatementsPhase = "discussion";
+            mafiaChat = new ArrayList<>();
+            playerChat = new ArrayList<>();
+            for (Player p : players) {
+                p.role = null;
+                p.alive = true;
+                p.lastDoctorTarget = null;
+                p.lastSheriffResult = null;
+                p.lastSheriffTargetName = null;
+                p.vigilanteShotsRemaining = 0;
+            }
         }
     }
 

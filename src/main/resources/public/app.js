@@ -13,6 +13,7 @@ const state = {
   pendingTargetByPhase: {},
   roleReveal: { revealed: false, acknowledged: false, lastPhase: '', lastRound: -1, lastRole: '' },
   dealRenderKey: '',
+  lastPlayerState: null,
   lastActionRenderKey: '',
 };
 
@@ -331,6 +332,21 @@ async function gmNextPhase() {
   await refreshAll();
 }
 
+async function gmVoidGame() {
+  await api('/api/gm/void', { method: 'POST', body: '{}' });
+  await refreshAll();
+  setMessage('Game voided. No scores were recorded.');
+}
+
+async function gmReturnLobby() {
+  await api('/api/gm/return-lobby', { method: 'POST', body: '{}' });
+  state.roleReveal = { revealed: false, acknowledged: false, lastPhase: '', lastRound: -1, lastRole: '' };
+  state.dealRenderKey = '';
+  state.lastActionRenderKey = '';
+  await refreshAll();
+  setMessage('Returned to lobby with seated players.');
+}
+
 async function resetLobby() {
   await api('/api/gm/reset', { method: 'POST', body: '{}' });
   state.playerId = null;
@@ -344,12 +360,16 @@ async function refreshGm() {
   const hostTab = document.querySelector('[data-tab="host"]');
   if (hostTab) hostTab.classList.toggle('hidden', !gm.canManage);
   if (!gm.canManage && document.querySelector('#tab-host.active')) showTab('play');
-  const setupVisible = gm.phase === 'lobby' || gm.phase === 'game_over';
+  const setupVisible = gm.phase === 'lobby';
   $('gm-setup-panel').classList.toggle('hidden', !setupVisible);
   $('gm-timer-panel').classList.toggle('hidden', !setupVisible);
   $('phase-pill').textContent = gm.phase;
   $('timer-pill').textContent = fmtSec(gm.phaseRemainingSec || 0);
   $('phase-heading').textContent = phaseTitle(gm.phase, gm.round);
+  $('void-game-btn').disabled = gm.phase === 'lobby';
+  $('start-night-btn').disabled = gm.phase === 'game_over';
+  $('next-phase-btn').disabled = gm.phase === 'game_over';
+  $('return-lobby-btn').classList.toggle('hidden', gm.phase !== 'game_over');
   $('room-kicker').textContent = gm.room?.name || 'Table One';
   $('roster-count').textContent = String(gm.playerCount);
   if (gm.phase === 'lobby' && !state.roleDirty) {
@@ -447,7 +467,7 @@ function gmGuidanceMarkup(gm) {
     final_statements: ['Final statements', `${gm.finalStatementPending || 0} final statement(s) still pending.`],
     discussion: ['Table discussion', 'Let alive players discuss. Move to voting when the room is ready or when the timer expires.'],
     day_vote: ['Day voting', `${gm.pendingDayVotes || 0} alive player vote(s) still pending. Strict majority is required for elimination.`],
-    game_over: ['Game over', `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
+    game_over: ['Game over', gm.winner === 'Voided' ? 'The GM voided this game. No scores were recorded. Reset to return to lobby setup.' : `Winner: ${gm.winner || 'unknown'}. Review scores, then reset for another table.`],
   };
   const [title, body] = guides[gm.phase] || ['Current phase', gm.phase || 'Waiting for game state.'];
   return `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body)}</span>`;
@@ -492,6 +512,8 @@ function renderRoster(players) {
 
 async function refreshPlayer() {
   if (!state.playerId) {
+    state.lastPlayerState = null;
+    renderMobileActionTray(null);
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
     $('player-phase-guide').innerHTML = '<strong>Take a seat</strong><span>Join the current room to enter the table.</span>';
@@ -500,9 +522,11 @@ async function refreshPlayer() {
   }
   try {
     const ps = await api(`/api/player-state/${state.playerId}`);
+    state.lastPlayerState = ps;
     $('join-state').classList.add('hidden');
     $('role-state').classList.remove('hidden');
     renderRole(ps);
+    renderMobileActionTray(ps);
     $('player-phase-guide').innerHTML = playerGuidanceMarkup(ps);
     renderPlayerAction(ps);
     renderPlayerList(ps.players || []);
@@ -510,6 +534,7 @@ async function refreshPlayer() {
   } catch (err) {
     localStorage.removeItem('playerId');
     state.playerId = null;
+    state.lastPlayerState = null;
     if (await recoverPlayerSeat()) {
       state.lastActionRenderKey = '';
       await refreshPlayer();
@@ -517,11 +542,47 @@ async function refreshPlayer() {
     }
     $('join-state').classList.remove('hidden');
     $('role-state').classList.add('hidden');
+    renderMobileActionTray(null);
     $('player-phase-guide').innerHTML = '<strong>Seat lost</strong><span>Join the current room again to reconnect.</span>';
   }
 }
 
+function actionForPhase(ps) {
+  if (!ps) return '';
+  if (ps.phase === 'night_mafia' && ps.role === 'Mafia') return 'submit-mafia';
+  if (ps.phase === 'night_sheriff' && ps.role === 'Sheriff') return 'submit-sheriff';
+  if (ps.phase === 'night_doctor' && ps.role === 'Doctor') return 'submit-doctor';
+  if (ps.phase === 'night_vigilante' && ps.role === 'Vigilante') return 'submit-vigilante';
+  if (ps.phase === 'day_vote') return 'submit-day';
+  return '';
+}
+
+function currentTargetLabel(ps) {
+  const action = actionForPhase(ps);
+  if (!action) return ps?.phase === 'night0' ? 'Role card' : 'None';
+  const storeKey = actionStoreKey(ps, action);
+  const selected = Object.prototype.hasOwnProperty.call(state.pendingTargetByPhase, storeKey)
+    ? state.pendingTargetByPhase[storeKey]
+    : submittedTarget(ps, action);
+  if ((action === 'submit-day' || action === 'submit-vigilante') && selected === '') {
+    return action === 'submit-day' ? 'Abstain' : 'Skip shot';
+  }
+  return (ps.players || []).find((player) => player.id === selected)?.name || 'None';
+}
+
+function renderMobileActionTray(ps) {
+  const tray = $('mobile-action-tray');
+  if (!tray) return;
+  tray.classList.toggle('hidden', !ps);
+  if (!ps) return;
+  $('tray-phase').textContent = phaseTitle(ps.phase, ps.round);
+  $('tray-timer').textContent = fmtSec(ps.phaseRemainingSec || 0);
+  $('tray-alive').textContent = `${ps.aliveCount || 0} alive`;
+  $('tray-target').textContent = currentTargetLabel(ps);
+}
+
 function playerGuidanceMarkup(ps) {
+  if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<strong>Game voided</strong><span>The GM voided this game. No scores were recorded.</span>';
   if (ps.phase === 'game_over') return `<strong>Game over</strong><span>Winner: ${escapeHtml(ps.winner || 'unknown')}. Your score has been recorded.</span>`;
   if (!ps.alive && ps.phase !== 'final_statements') return '<strong>Observe only</strong><span>You are out of the round. Watch the table and keep private information private.</span>';
   if (ps.phase === 'night0') return '<strong>Role reveal</strong><span>Reveal privately, confirm when ready, then wait for the GM.</span>';
@@ -765,6 +826,7 @@ function actionMarkup(ps) {
   if (ps.phase === 'day_vote') return actionPicker('submit-day', ps, { label: 'Submit vote', hint: `Strict majority required. ${ps.pendingDayVotes || 0} players pending.`, includeAbstain: true, skipLabel: 'Abstain' });
   if (ps.phase === 'morning') return `<p>${ps.morningDeaths?.length ? ps.morningDeaths.map((d) => escapeHtml(d.name)).join(', ') + ' died.' : 'No one died.'}</p>`;
   if (ps.phase === 'discussion') return '<p>Discussion is open. Use the public channel or talk at the table.</p>';
+  if (ps.phase === 'game_over' && ps.winner === 'Voided') return '<p class="winner-text">Game voided by GM</p><p class="muted">No scores were recorded. Wait for the lobby reset.</p>';
   if (ps.phase === 'game_over') return `<p class="winner-text">Winner: ${escapeHtml(ps.winner || 'Unknown')}</p>`;
   return '<p class="muted">No action right now.</p>';
 }
@@ -799,6 +861,7 @@ function bindActionTargets(panel) {
       candidate.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     refreshActionChoice(panel);
+    if (state.lastPlayerState) renderMobileActionTray(state.lastPlayerState);
   }));
   refreshActionChoice(panel);
 }
@@ -1000,6 +1063,8 @@ function bindEvents() {
   $('save-timers-btn').addEventListener('click', () => saveTimerSettings().catch((err) => setMessage(err.message, true)));
   $('start-night-btn').addEventListener('click', () => gmStartNight().catch((err) => setMessage(err.message, true)));
   $('next-phase-btn').addEventListener('click', () => gmNextPhase().catch((err) => setMessage(err.message, true)));
+  $('void-game-btn').addEventListener('click', () => gmVoidGame().catch((err) => setMessage(err.message, true)));
+  $('return-lobby-btn').addEventListener('click', () => gmReturnLobby().catch((err) => setMessage(err.message, true)));
   $('reset-lobby-btn').addEventListener('click', () => resetLobby().catch((err) => setMessage(err.message, true)));
   $('reveal-role-btn').addEventListener('click', () => { state.roleReveal.revealed = true; state.lastActionRenderKey = ''; refreshPlayer(); });
   $('hide-role-btn').addEventListener('click', () => { state.roleReveal.revealed = false; refreshPlayer(); });

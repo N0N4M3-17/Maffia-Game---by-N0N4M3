@@ -158,6 +158,8 @@
               <div class="split-actions">
                 <button id="start-night-btn" class="primary-button">Start night</button>
                 <button id="next-phase-btn" class="secondary-button">Next phase</button>
+                <button id="void-game-btn" class="danger-button">Void game</button>
+                <button id="return-lobby-btn" class="secondary-button hidden">Return lobby</button>
               </div>
             </section>
 
@@ -171,6 +173,24 @@
         </div>
 
         <div id="tab-play" class="tab">
+          <section id="mobile-action-tray" class="mobile-action-tray hidden" aria-live="polite">
+            <div>
+              <span>Phase</span>
+              <strong id="tray-phase">Waiting</strong>
+            </div>
+            <div>
+              <span>Clock</span>
+              <strong id="tray-timer">00:00</strong>
+            </div>
+            <div>
+              <span>Table</span>
+              <strong id="tray-alive">0 alive</strong>
+            </div>
+            <div>
+              <span>Selected</span>
+              <strong id="tray-target">None</strong>
+            </div>
+          </section>
           <div class="content-grid play-grid">
             <section class="panel role-panel">
               <p class="eyebrow">Private</p>
