@@ -313,6 +313,66 @@ code {
   box-shadow: 0 16px 58px rgba(215, 182, 93, .10);
 }
 
+.play-grid.deal-scene {
+  grid-template-columns: 1fr;
+}
+
+.play-grid.deal-scene .role-panel {
+  min-height: calc(100vh - 132px);
+  display: grid;
+  align-content: stretch;
+  padding: clamp(14px, 2vw, 24px);
+  overflow: hidden;
+}
+
+.play-grid.deal-scene .role-panel > .eyebrow,
+.play-grid.deal-scene .role-panel > h3,
+.play-grid.deal-scene .action-panel-shell,
+.play-grid.deal-scene .table-panel,
+.play-grid.deal-scene .chat-panel {
+  display: none;
+}
+
+.play-grid.deal-scene #role-state {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: minmax(360px, 1fr) auto auto;
+  gap: 16px;
+}
+
+.play-grid.deal-scene .deal-stage {
+  min-height: clamp(420px, 62vh, 700px);
+  margin: 0;
+  padding: clamp(18px, 3vw, 36px);
+}
+
+.play-grid.deal-scene .deal-header strong {
+  font-size: clamp(28px, 4vw, 54px);
+  line-height: .95;
+}
+
+.play-grid.deal-scene .deal-table {
+  min-height: 330px;
+}
+
+.play-grid.deal-scene .deal-card {
+  width: clamp(92px, 10vw, 150px);
+}
+
+.play-grid.deal-scene .deal-card.mine {
+  cursor: pointer;
+}
+
+.play-grid.deal-scene .role-card {
+  width: min(520px, 100%);
+  justify-self: center;
+}
+
+.play-grid.deal-scene #night0-controls {
+  width: min(520px, 100%);
+  justify-self: center;
+}
+
 .admin-grid {
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
 }
@@ -1387,6 +1447,32 @@ code {
     order: 1;
   }
 
+  .play-grid.deal-scene .role-panel {
+    min-height: calc(100vh - 178px);
+    padding: 10px;
+  }
+
+  .play-grid.deal-scene #role-state {
+    grid-template-rows: minmax(360px, 1fr) auto auto;
+  }
+
+  .play-grid.deal-scene .deal-stage {
+    min-height: 430px;
+    padding: 14px;
+  }
+
+  .play-grid.deal-scene .deal-table {
+    min-height: 310px;
+  }
+
+  .play-grid.deal-scene .deal-card {
+    width: clamp(76px, 27vw, 118px);
+  }
+
+  .play-grid.deal-scene .role-card {
+    min-height: 154px;
+  }
+
   .action-panel-shell {
     order: 2;
     min-height: 0;
@@ -1480,6 +1566,10 @@ code {
     grid-template-areas:
       "role action table"
       "chat chat table";
+  }
+
+  .play-grid.deal-scene {
+    grid-template-areas: "role";
   }
 
   .role-panel {

@@ -102,6 +102,7 @@ assert(app.includes('pendingActionMarkup') && app.includes('pending-chip'), 'GM 
 assert(app.includes("document.querySelector('[data-tab=\"host\"]')") && app.includes('!gm.canManage'), 'Host tab must be hidden for non-managers');
 assert(app.includes('renderDealStage') && app.includes('--card-count') && app.includes('Cards are being dealt'), 'Night 0 must render one animated card per seated player');
 assert(app.includes('dealRenderKey') && app.includes('stage.querySelectorAll') && app.includes('This copied card becomes your private role card below.'), 'Night 0 deal animation must render once per deal and then update existing cards');
+assert(app.includes("playGrid.classList.toggle('deal-scene', ps.phase === 'night0')") && app.includes('boundReveal'), 'Night 0 must switch to a full deal scene with a clickable dealt player card');
 assert(app.includes('roleIcon') && app.includes("kind === 'Sheriff'") && app.includes("kind === 'Vigilante'"), 'role symbols must cover the supported role set');
 assert(html.includes('role="button"') && app.includes('toggleRolePeek') && app.includes('roleCardKeydown'), 'role card peek toggle must be clickable and keyboard accessible');
 assert(app.includes('role-peeking') && app.includes('Tap to peek. Tap again to hide'), 'role card must support reveal/hide peeking beyond startup');
@@ -113,6 +114,7 @@ assert(app.includes('state.rooms.find((candidate) => candidate.active) || state.
 assert(app.includes('recoverPlayerSeat') && app.includes("api('/api/my-player')"), 'client must recover player seat by account');
 assert(read('src/main/resources/public/styles.css').includes('grid-template-areas') && read('src/main/resources/public/styles.css').includes('@media (orientation: portrait)'), 'play layout must keep separate landscape and portrait rules');
 assert(read('src/main/resources/public/styles.css').includes('@keyframes dealShuffle') && read('src/main/resources/public/styles.css').includes('prefers-reduced-motion'), 'role deal animation must include reduced-motion support');
+assert(read('src/main/resources/public/styles.css').includes('.play-grid.deal-scene') && read('src/main/resources/public/styles.css').includes('min-height: clamp(420px, 62vh, 700px)'), 'Night 0 deal scene must use the main play space');
 assert(read('src/main/resources/public/styles.css').includes('.play-grid.role-peeking') && read('src/main/resources/public/styles.css').includes('.selected-target-summary'), 'role peek and selected-target UI states must be styled');
 assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tray') && read('src/main/resources/public/styles.css').includes('#tray-timer'), 'mobile action tray must be styled for portrait play');
 assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');

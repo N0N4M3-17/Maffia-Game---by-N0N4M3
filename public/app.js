@@ -663,6 +663,7 @@ function renderRole(ps) {
   $('role-card').setAttribute('aria-label', cardRevealed ? 'Hide role card' : 'Reveal role card');
   const playGrid = document.querySelector('#tab-play .play-grid');
   if (playGrid) {
+    playGrid.classList.toggle('deal-scene', ps.phase === 'night0');
     playGrid.classList.remove('role-peeking', 'role-mafia', 'role-sheriff', 'role-doctor', 'role-vigilante', 'role-town');
     if (cardRevealed) playGrid.classList.add('role-peeking', `role-${roleClass}`);
   }
@@ -727,6 +728,18 @@ function renderDealStage(ps) {
   stage.querySelector('.deal-header strong').textContent = revealed ? `You are the ${ps.role || 'Unknown'}` : 'Cards are being dealt';
   stage.querySelector('.deal-header span').textContent = revealed ? 'This copied card becomes your private role card below.' : `${players.length} role card(s) for ${players.length} seated player(s).`;
   stage.querySelectorAll('.deal-card').forEach((card, index) => {
+    const isSelf = index === selfIndex;
+    if (isSelf) {
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-label', revealed ? 'Hide your dealt role card' : 'Reveal your dealt role card');
+      card.setAttribute('aria-pressed', revealed ? 'true' : 'false');
+      if (!card.dataset.boundReveal) {
+        card.dataset.boundReveal = 'true';
+        card.addEventListener('click', toggleRolePeek);
+        card.addEventListener('keydown', roleCardKeydown);
+      }
+    }
     card.classList.toggle('revealed', index === selfIndex && revealed);
   });
 }

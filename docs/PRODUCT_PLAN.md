@@ -59,7 +59,7 @@ Treat the browser experience like five Unity-style scenes:
 | Supported role actions | **Implemented** | 90% | Mafia, Sheriff, Doctor, and Vigilante actions are implemented; end-to-end edge-case verification remains. |
 | Day voting and victory | **Implemented** | 85% | Voting, public-tally setting, elimination, and win detection exist; vote-rule acceptance tests are still needed. |
 | Chat and information controls | **Partially implemented** | 65% | Mafia chat is phase-gated; public player chat currently needs phase/dead-player restriction hardening. |
-| Player/GM experience | **Partially implemented** | 94% | Functional responsive UI, portrait action tray, one-time Night 0 card deal, reusable peek/hide role card, clickable target cards with selection summaries, doctor warnings, sheriff result visuals, GM/player phase guidance, pending-player GM helpers, an active-round GM console, and GM observability exist; accessibility and broader polish remain. |
+| Player/GM experience | **Partially implemented** | 95% | Functional responsive UI, portrait action tray, full-screen Night 0 deal scene, reusable peek/hide role card, clickable target cards with selection summaries, doctor warnings, sheriff result visuals, GM/player phase guidance, pending-player GM helpers, an active-round GM console, and GM observability exist; accessibility and broader polish remain. |
 | Test automation / quality gate | **In progress** | 25% | Static checks exist and executable JUnit coverage now covers vote majority, ties, abstentions, plurality helpers, win-condition decisions, and night-role phase ordering; broader role, night-resolution, authorization, and API smoke tests remain. |
 | Release operations and documentation | **In progress** | 65% | Java launch instructions, GM runbook, CI workflow, and release checklist exist; packaging and clean-environment verification remain. |
 | Local accounts, rooms, profiles, and admin | **In progress** | 70% | Local account registry, password hashing, seeded admin, named rooms, active-room hosting, profiles, and admin editing exist; fully independent simultaneous multi-room game state and public hosting hardening remain. |
@@ -130,7 +130,7 @@ Treat the browser experience like five Unity-style scenes:
 - [x] Add GM-facing phase guidance for setup, night roles, morning, final statements, discussion, voting, and game over.
 - [x] Replace the raw GM live-state JSON view with status cards, separated chat previews, action summaries, and active-round controls.
 - [x] Add GM current-action pending player chips for night roles, final statements, and day voting.
-- [x] Add a one-time animated Night 0 role-card deal with one card per seated player, role symbols, a copied private role card, and separate landscape/portrait layouts.
+- [x] Add a full-screen Night 0 deal scene with one card per seated player, role symbols, a clickable player card reveal, a copied private role card, and separate landscape/portrait layouts.
 - [ ] Improve small-screen usability, keyboard support, semantic labels, color contrast, and non-color status cues.
 - [x] Surface clear GM-facing phase guidance, action completion counts, outcomes, and winner summary.
 - [ ] Conduct structured multi-device playtests (minimum 3 players and a representative 6–10 player game) and record defects.
