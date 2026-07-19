@@ -66,7 +66,7 @@ On the Host screen:
 
 1. Confirm all players have joined the active room.
 2. Set role counts so total roles match seated players.
-3. Keep at least 1 Mafia, 1 Town, and 1 Sheriff/Doctor/Vigilante.
+3. Keep at least 1 Mafia, 1 Town, and 1 Sheriff/Doctor/Vigilante. Add Jester only when you want a neutral vote-out objective in the round.
 4. Adjust timers if needed.
 5. Choose whether day vote tally messages are public.
 6. Save setup and launch roles.
@@ -78,7 +78,10 @@ The server owns timers, legal actions, private information, and phase transition
 - Night 0 privately reveals roles.
 - Mafia, Sheriff, Doctor, and Vigilante phases run in order when those roles are alive.
 - Mafia votes lock early when a majority kill target is reached.
+- Vigilante choices lock like Sheriff and Doctor choices, then advance after the short result hold.
 - Day votes resolve on strict majority or when every alive player has voted.
+- If a Jester is voted out during the day, that Jester immediately wins independently.
+- If morning begins with only one Mafia and one armed Vigilante alive, the Vigilante wins independently.
 - Newly eliminated players receive a final-statement phase and may submit one final public message.
 - Dead players become observe-only outside their final-statement window.
 
@@ -89,7 +92,9 @@ The GM can manually advance the phase when needed.
 When the game reaches game over, scores are recorded to local player profiles:
 
 - Mafia players win when Mafia wins.
-- Non-Mafia players win when Town wins.
+- Town-aligned players win when Town wins.
+- A lynched Jester wins alone on a Jester victory.
+- Vigilante wins on the special armed morning duel victory.
 - Games, wins, and losses persist in `data/mafia-db.json`.
 
 ## 9. Troubleshooting

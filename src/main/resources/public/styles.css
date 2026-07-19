@@ -357,6 +357,12 @@ code {
   box-shadow: 0 16px 58px rgba(215, 182, 93, .10);
 }
 
+.play-grid.role-jester .role-panel,
+.play-grid.role-jester .action-panel-shell {
+  border-color: rgba(207, 74, 74, .58);
+  box-shadow: 0 16px 58px rgba(111, 168, 220, .10), 0 0 0 1px rgba(215, 182, 93, .12);
+}
+
 .play-grid.deal-scene {
   grid-template-columns: 1fr;
 }
@@ -902,6 +908,7 @@ code {
 .gm-role-row.sheriff { color: var(--blue); }
 .gm-role-row.doctor { color: var(--green); }
 .gm-role-row.vigilante { color: var(--gold); }
+.gm-role-row.jester { color: #ff6b74; }
 .gm-role-row.town { color: #69d879; }
 
 .gm-table-stage {
@@ -976,6 +983,7 @@ code {
 .gm-player-card.sheriff .gm-player-token { border-color: var(--blue); }
 .gm-player-card.doctor .gm-player-token { border-color: var(--green); }
 .gm-player-card.vigilante .gm-player-token { border-color: var(--gold); }
+.gm-player-card.jester .gm-player-token { border-color: #ff6b74; box-shadow: 0 0 0 2px rgba(111, 168, 220, .16); }
 .gm-player-card strong {
   max-width: 100%;
   overflow: hidden;
@@ -993,6 +1001,7 @@ code {
 .gm-player-card.sheriff span { color: var(--blue); }
 .gm-player-card.doctor span { color: var(--green); }
 .gm-player-card.vigilante span { color: var(--gold); }
+.gm-player-card.jester span { color: #ff6b74; }
 
 .gm-player-card em {
   color: var(--green);
@@ -1315,6 +1324,8 @@ code {
 .role-card.revealed.doctor { border-color: var(--green); box-shadow: 0 0 0 1px rgba(89, 194, 137, .28), 0 20px 70px rgba(89, 194, 137, .12); }
 .role-card.revealed.doctor .role-symbol { color: var(--green); }
 .role-card.revealed.vigilante { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(215, 182, 93, .28), 0 20px 70px rgba(215, 182, 93, .12); }
+.role-card.revealed.jester { border-color: #ff6b74; box-shadow: 0 0 0 1px rgba(207, 74, 74, .28), 0 20px 70px rgba(111, 168, 220, .12); }
+.role-card.revealed.jester .role-symbol { color: #ff6b74; }
 .role-card.revealed.town { border-color: #d9d3c2; box-shadow: 0 0 0 1px rgba(217, 211, 194, .2), 0 20px 70px rgba(217, 211, 194, .08); }
 
 .role-card.masked {
@@ -1446,6 +1457,7 @@ code {
 .deal-card-front.sheriff { color: var(--blue); }
 .deal-card-front.doctor { color: var(--green); }
 .deal-card-front.vigilante { color: var(--gold); }
+.deal-card-front.jester { color: #ff6b74; background: linear-gradient(135deg, #2a0810 0 48%, #10213a 48% 100%); }
 .deal-card-front.town { color: #d9d3c2; }
 
 .deal-card-front svg {

@@ -31,10 +31,12 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 - GM-hosted room lobby in browser.
 - Players join from their authenticated account.
 - Player seats recover from the signed-in account after refresh where possible.
-- GM configures role counts (including Town manually).
+- GM configures role counts (including Town and optional Jester manually).
 - GM starts game into **Night 0**.
 - Testing launch rules: minimum 3 players, with at least 1 Mafia, 1 Sheriff/Doctor/Vigilante, and 1 Town.
 - Roles are pushed to each player privately in their client on Night 0.
+- Jester is a neutral role that wins independently if voted out during the day.
+- An armed Vigilante wins independently if morning begins with only that Vigilante and one Mafia alive.
 - GM sees all connected players and assigned roles once game starts.
 - Public player chat is restricted to morning, discussion, day vote, and game over; dead players are observe-only.
 - Newly eliminated players receive a timed final-statement phase and can submit one final public message.

@@ -57,19 +57,24 @@ class GameRulesTest {
 
     @Test
     void townWinsOnlyAfterAssignedRolesWhenNoMafiaRemain() {
-        assertEquals("Town", GameRules.winnerFor(0, 3, true));
-        assertNull(GameRules.winnerFor(0, 3, false));
+        assertEquals("Town", GameRules.winnerFor(0, 3, true, false));
+        assertNull(GameRules.winnerFor(0, 3, false, false));
     }
 
     @Test
     void mafiaWinsAtParityOrMajority() {
-        assertEquals("Mafia", GameRules.winnerFor(1, 1, true));
-        assertEquals("Mafia", GameRules.winnerFor(2, 1, true));
+        assertEquals("Mafia", GameRules.winnerFor(1, 1, true, false));
+        assertEquals("Mafia", GameRules.winnerFor(2, 1, true, false));
+    }
+
+    @Test
+    void armedVigilanteDuelWinsBeforeMafiaParity() {
+        assertEquals("Vigilante", GameRules.winnerFor(1, 1, true, true));
     }
 
     @Test
     void gameContinuesWhileTownOutnumbersMafia() {
-        assertNull(GameRules.winnerFor(1, 2, true));
+        assertNull(GameRules.winnerFor(1, 2, true, false));
     }
 
     @Test

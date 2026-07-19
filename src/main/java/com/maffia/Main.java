@@ -443,7 +443,7 @@ public class Main {
                 }
                 RoleConfig cfg = new RoleConfig(
                         intValue(b, "mafia"), intValue(b, "sheriff"), intValue(b, "doctor"),
-                        intValue(b, "vigilante"), intValue(b, "town"),
+                        intValue(b, "vigilante"), b.has("jester") ? intValue(b, "jester") : 0, intValue(b, "town"),
                         b.has("vigilanteShots") ? b.get("vigilanteShots").getAsInt() : 1
                 );
                 if (!cfg.valid()) {
@@ -642,14 +642,21 @@ public class Main {
                 JsonObject b = readBodyJson(ex);
                 Player actor = requireAlivePlayer(ex, b, "Vigilante", "night_vigilante");
                 if (actor == null) return;
+                if (STATE.vigilanteActionSubmitted) { writeJson(ex, 400, Map.of("error", "Vigilante choice is already submitted.")); return; }
                 String target = b.has("targetId") && !b.get("targetId").isJsonNull() ? b.get("targetId").getAsString() : "";
+                Player t = null;
                 if (!target.isBlank()) {
                     if (target.equals(actor.id)) { writeJson(ex, 400, Map.of("error", "Vigilante cannot self target.")); return; }
-                    if (!isAlivePlayer(target)) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
+                    t = findPlayer(target);
+                    if (t == null || !t.alive) { writeJson(ex, 400, Map.of("error", "Target must be alive.")); return; }
                     if (actor.vigilanteShotsRemaining <= 0) { writeJson(ex, 400, Map.of("error", "No shots remaining.")); return; }
                 }
                 STATE.vigilanteTarget = target.isBlank() ? null : target;
-                writeJson(ex, 200, Map.of("ok", true));
+                STATE.vigilanteActionSubmitted = true;
+                holdActionResult("Vigilante submitted", target.isBlank()
+                        ? actor.name + " skipped their shot. Advancing shortly."
+                        : actor.name + " targeted " + t.name + ". Advancing shortly.");
+                writeJson(ex, 200, Map.of("ok", true, "locked", true, "hold", true, "phase", STATE.phase));
                 return;
             }
 
@@ -758,6 +765,8 @@ public class Main {
 
         STATE.round = 0;
         STATE.winner = null;
+        STATE.winningPlayerId = null;
+        STATE.scoresRecorded = false;
         setPhase("night0");
         writeJson(ex, 200, Map.of("ok", true, "phase", STATE.phase));
     }
@@ -769,6 +778,7 @@ public class Main {
         STATE.sheriffTarget = null;
         STATE.doctorTarget = null;
         STATE.vigilanteTarget = null;
+        STATE.vigilanteActionSubmitted = false;
         STATE.dayVotes.clear();
         STATE.morningDeaths = new ArrayList<>();
         STATE.finalStatementPlayerIds = new ArrayList<>();
@@ -856,11 +866,15 @@ public class Main {
             Player p = findPlayer(target);
             if (p != null && p.alive) {
                 p.alive = false;
-        STATE.morningDeaths = new ArrayList<>();
-        STATE.finalStatementPlayerIds = new ArrayList<>();
-        STATE.finalStatements = new LinkedHashMap<>();
-        STATE.afterFinalStatementsPhase = "discussion";
+                STATE.morningDeaths = new ArrayList<>();
+                STATE.finalStatementPlayerIds = new ArrayList<>();
+                STATE.finalStatements = new LinkedHashMap<>();
+                STATE.afterFinalStatementsPhase = "discussion";
                 addDeathForAnnouncement(p);
+                if ("Jester".equals(p.role)) {
+                    pushPlayerChat("SYSTEM", p.name + " was voted out and wins as Jester.");
+                    declareWinner("Jester", p.id);
+                }
             }
         } else {
             STATE.morningDeaths = new ArrayList<>();
@@ -875,15 +889,22 @@ public class Main {
     }
 
     private static void checkWin() {
+        if ("game_over".equals(STATE.phase)) return;
         long mafiaAlive = alivePlayersByRole("Mafia").size();
-        long townAlive = STATE.players.stream().filter(p -> p.alive && !"Mafia".equals(p.role)).count();
-        String winner = GameRules.winnerFor(mafiaAlive, townAlive, STATE.players.stream().anyMatch(p -> p.role != null));
+        long townAlive = STATE.players.stream().filter(p -> p.alive && isTownAligned(p.role)).count();
+        String winner = GameRules.winnerFor(mafiaAlive, townAlive, STATE.players.stream().anyMatch(p -> p.role != null), armedVigilanteMorningDuel());
         if (winner != null) {
-            STATE.phase = "game_over";
-            STATE.winner = winner;
-            STATE.phaseEndsAt = 0;
-            recordScores(winner);
+            Player winningVigilante = "Vigilante".equals(winner) ? aliveByRole("Vigilante") : null;
+            declareWinner(winner, winningVigilante == null ? null : winningVigilante.id);
         }
+    }
+
+    private static void declareWinner(String winner, String winningPlayerId) {
+        STATE.phase = "game_over";
+        STATE.winner = winner;
+        STATE.winningPlayerId = winningPlayerId;
+        STATE.phaseEndsAt = 0;
+        recordScores(winner);
     }
 
     private static void recordScores(String winner) {
@@ -891,7 +912,10 @@ public class Main {
         for (Player p : STATE.players) {
             Account a = DB.findAccount(p.accountId);
             if (a == null || p.role == null) continue;
-            boolean won = ("Mafia".equals(p.role) && "Mafia".equals(winner)) || (!"Mafia".equals(p.role) && "Town".equals(winner));
+            boolean won = ("Mafia".equals(p.role) && "Mafia".equals(winner))
+                    || (isTownAligned(p.role) && "Town".equals(winner))
+                    || ("Vigilante".equals(p.role) && "Vigilante".equals(winner))
+                    || (p.id.equals(STATE.winningPlayerId) && "Jester".equals(winner));
             a.scoreGames += 1;
             if (won) a.scoreWins += 1;
             else a.scoreLosses += 1;
@@ -1106,6 +1130,7 @@ public class Main {
         payload.put("sheriffTargetCurrent", sheriff ? STATE.sheriffTarget : null);
         payload.put("doctorProtectCurrent", doctor ? STATE.doctorTarget : null);
         payload.put("vigilanteTargetCurrent", vigilante ? STATE.vigilanteTarget : null);
+        payload.put("vigilanteActionSubmitted", vigilante && STATE.vigilanteActionSubmitted);
         payload.put("dayVoteCurrent", STATE.dayVotes.get(p.id));
         payload.put("mafiaVoteSubmitted", mafia && STATE.mafiaVotes.containsKey(p.id));
         payload.put("dayVoteSubmitted", STATE.dayVotes.containsKey(p.id));
@@ -1320,7 +1345,8 @@ public class Main {
 
     private static boolean roleCanSeeActionNotice(String role) {
         return ("night_sheriff".equals(STATE.phase) && "Sheriff".equals(role) && STATE.sheriffTarget != null)
-                || ("night_doctor".equals(STATE.phase) && "Doctor".equals(role) && STATE.doctorTarget != null);
+                || ("night_doctor".equals(STATE.phase) && "Doctor".equals(role) && STATE.doctorTarget != null)
+                || ("night_vigilante".equals(STATE.phase) && "Vigilante".equals(role) && STATE.vigilanteActionSubmitted);
     }
 
     private static String playerActionNoticeBody(Player p) {
@@ -1329,6 +1355,9 @@ public class Main {
         }
         if ("night_doctor".equals(STATE.phase) && "Doctor".equals(p.role) && STATE.doctorTarget != null) {
             return "Your protection is locked in. The table will advance shortly.";
+        }
+        if ("night_vigilante".equals(STATE.phase) && "Vigilante".equals(p.role) && STATE.vigilanteActionSubmitted) {
+            return "Your choice is locked in. The table will advance shortly.";
         }
         return "";
     }
@@ -1348,7 +1377,7 @@ public class Main {
                     .map(p -> p.name)
                     .collect(Collectors.toList());
             case "night_vigilante" -> alivePlayersByRole("Vigilante").stream()
-                    .filter(p -> STATE.vigilanteTarget == null)
+                    .filter(p -> !STATE.vigilanteActionSubmitted)
                     .map(p -> p.name)
                     .collect(Collectors.toList());
             case "final_statements" -> STATE.finalStatementPlayerIds.stream()
@@ -1373,6 +1402,15 @@ public class Main {
     private static Player findPlayer(String id) { return STATE.players.stream().filter(p -> p.id.equals(id)).findFirst().orElse(null); }
     private static Player findPlayerByAccount(String accountId) { return STATE.players.stream().filter(p -> accountId.equals(p.accountId)).findFirst().orElse(null); }
     private static boolean hasMinimumTestRoles(RoleConfig cfg) { return cfg.mafia >= 1 && (cfg.sheriff + cfg.doctor + cfg.vigilante) >= 1 && cfg.town >= 1; }
+    private static boolean isTownAligned(String role) { return role != null && !"Mafia".equals(role) && !"Jester".equals(role); }
+    private static boolean armedVigilanteMorningDuel() {
+        Player vigilante = aliveByRole("Vigilante");
+        return "morning".equals(STATE.phase)
+                && alivePlayersByRole("Mafia").size() == 1
+                && aliveCount() == 2
+                && vigilante != null
+                && vigilante.vigilanteShotsRemaining > 0;
+    }
     private static int intValue(JsonObject body, String key) { return body.has(key) ? body.get(key).getAsInt() : -1; }
     private static int positiveSecondOrDefault(JsonObject body, String key, int fallback) { return body.has(key) ? Math.max(1, body.get(key).getAsInt()) : fallback; }
     private static String nullToEmpty(String value) { return value == null ? "" : value; }
@@ -1383,6 +1421,7 @@ public class Main {
         for (int i = 0; i < cfg.sheriff; i++) pool.add("Sheriff");
         for (int i = 0; i < cfg.doctor; i++) pool.add("Doctor");
         for (int i = 0; i < cfg.vigilante; i++) pool.add("Vigilante");
+        for (int i = 0; i < cfg.jester; i++) pool.add("Jester");
         for (int i = 0; i < cfg.town; i++) pool.add("Town");
         return pool;
     }
@@ -1393,6 +1432,7 @@ public class Main {
             case "Sheriff" -> "Investigate one player each night.";
             case "Doctor" -> "Protect one player each night. You cannot repeat the same target on consecutive nights.";
             case "Vigilante" -> "Use limited night shots to remove a suspect, or skip.";
+            case "Jester" -> "Get yourself voted out during the day. You win alone if the table lynches you.";
             case "Town" -> "Read the table, argue well, and vote out the mafia.";
             default -> "";
         };
@@ -1591,6 +1631,7 @@ public class Main {
         String nightStep = "-";
         int round = 0;
         String winner = null;
+        String winningPlayerId = null;
         String lastSheriffResult = null;
         String actionNoticeTitle = null;
         String actionNoticeBody = null;
@@ -1598,13 +1639,14 @@ public class Main {
         boolean scoresRecorded = false;
 
         List<Player> players = new ArrayList<>();
-        RoleConfig config = new RoleConfig(2, 1, 1, 0, 1, 1);
+        RoleConfig config = new RoleConfig(2, 1, 1, 0, 0, 1, 1);
         TimerSettings timerSettings = new TimerSettings(60, 60, 60, 60, 60, 45, 60, 60);
 
         Map<String, String> mafiaVotes = new HashMap<>();
         String sheriffTarget = null;
         String doctorTarget = null;
         String vigilanteTarget = null;
+        boolean vigilanteActionSubmitted = false;
         Map<String, String> dayVotes = new HashMap<>();
 
         List<Map<String, String>> morningDeaths = new ArrayList<>();
@@ -1620,18 +1662,20 @@ public class Main {
             nightStep = "-";
             round = 0;
             winner = null;
+            winningPlayerId = null;
             lastSheriffResult = null;
             actionNoticeTitle = null;
             actionNoticeBody = null;
             phaseEndsAt = 0L;
             scoresRecorded = false;
             players = new ArrayList<>();
-            config = new RoleConfig(2, 1, 1, 0, 1, 1);
+            config = new RoleConfig(2, 1, 1, 0, 0, 1, 1);
             timerSettings = new TimerSettings(60, 60, 60, 60, 60, 45, 60, 60);
             mafiaVotes = new HashMap<>();
             sheriffTarget = null;
             doctorTarget = null;
             vigilanteTarget = null;
+            vigilanteActionSubmitted = false;
             dayVotes = new HashMap<>();
             morningDeaths = new ArrayList<>();
             finalStatementPlayerIds = new ArrayList<>();
@@ -1647,6 +1691,7 @@ public class Main {
             nightStep = "-";
             round = 0;
             winner = null;
+            winningPlayerId = null;
             lastSheriffResult = null;
             actionNoticeTitle = null;
             actionNoticeBody = null;
@@ -1656,6 +1701,7 @@ public class Main {
             sheriffTarget = null;
             doctorTarget = null;
             vigilanteTarget = null;
+            vigilanteActionSubmitted = false;
             dayVotes = new HashMap<>();
             morningDeaths = new ArrayList<>();
             finalStatementPlayerIds = new ArrayList<>();
@@ -1675,17 +1721,18 @@ public class Main {
     }
 
     private static final class RoleConfig {
-        int mafia, sheriff, doctor, vigilante, town, vigilanteShots;
-        RoleConfig(int mafia, int sheriff, int doctor, int vigilante, int town, int vigilanteShots) {
-            this.mafia = mafia; this.sheriff = sheriff; this.doctor = doctor; this.vigilante = vigilante; this.town = town; this.vigilanteShots = vigilanteShots;
+        int mafia, sheriff, doctor, vigilante, jester, town, vigilanteShots;
+        RoleConfig(int mafia, int sheriff, int doctor, int vigilante, int jester, int town, int vigilanteShots) {
+            this.mafia = mafia; this.sheriff = sheriff; this.doctor = doctor; this.vigilante = vigilante; this.jester = jester; this.town = town; this.vigilanteShots = vigilanteShots;
         }
-        boolean valid() { return mafia >= 0 && sheriff >= 0 && doctor >= 0 && vigilante >= 0 && town >= 0 && vigilanteShots >= 0; }
+        boolean valid() { return mafia >= 0 && sheriff >= 0 && doctor >= 0 && vigilante >= 0 && jester >= 0 && town >= 0 && vigilanteShots >= 0; }
         Map<String, Integer> toMap() {
             Map<String, Integer> map = new LinkedHashMap<>();
             map.put("mafia", mafia);
             map.put("sheriff", sheriff);
             map.put("doctor", doctor);
             map.put("vigilante", vigilante);
+            map.put("jester", jester);
             map.put("town", town);
             map.put("vigilanteShots", vigilanteShots);
             return map;
