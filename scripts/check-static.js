@@ -128,6 +128,7 @@ assert(read('src/main/resources/public/styles.css').includes('.mobile-action-tra
 assert(read('src/main/resources/public/styles.css').includes('.pending-card') && read('src/main/resources/public/styles.css').includes('.pending-chip'), 'GM pending helper must be styled as UI chips');
 assert(read('src/main/resources/public/styles.css').includes('.gm-action-notice'), 'GM action result notice must be styled as a feed element');
 assert(read('src/main/resources/public/styles.css').includes('.gm-command-shell') && read('src/main/resources/public/styles.css').includes('.gm-event-log') && read('src/main/resources/public/styles.css').includes('.gm-player-card'), 'GM command center scene must be styled with table stage and event log');
+assert(read('src/main/resources/public/styles.css').includes('.host-grid.gm-command-view') && read('src/main/resources/public/styles.css').includes('width: min(980px, calc(100% - 56px))') && !read('src/main/resources/public/styles.css').includes('width: min(520px, 88%)'), 'active GM command view must use the available workspace width');
 assert(read('src/main/resources/public/styles.css').includes('.seat-remove') && read('src/main/resources/public/styles.css').includes('.manager-seat'), 'host roster seat management must be styled');
 assert(read('src/main/resources/public/styles.css').includes('.chat-status') && read('src/main/resources/public/styles.css').includes('.chat-form.disabled'), 'closed public chat state must be styled');
 assert(read('.gitignore').includes('data/'), 'local database folder must be ignored');
