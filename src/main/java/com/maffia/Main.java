@@ -310,6 +310,7 @@ public class Main {
                 }
                 boolean removed = DB.data.accounts.removeIf(a -> a.id.equals(id));
                 DB.data.sessions.entrySet().removeIf(e -> e.getValue().accountId.equals(id));
+                for (Room room : DB.data.rooms) { room.observerAccountIds.remove(id); room.blockedUntil.remove(id); }
                 if ("game_over".equals(STATE.phase) && departing != null) {
                     if (!STATE.playerIdsToRemoveOnLobbyReturn.contains(departing.id)) STATE.playerIdsToRemoveOnLobbyReturn.add(departing.id);
                 } else {
@@ -323,17 +324,13 @@ public class Main {
             if ("GET".equals(method) && "/api/rooms".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
-                writeJson(ex, 200, Map.of("rooms", DB.data.rooms.stream().map(Main::roomPayload).toList()));
+                writeJson(ex, 200, Map.of("rooms", DB.data.rooms.stream().filter(r -> !r.disbanded).map(r -> roomManagementPayload(r, account)).toList()));
                 return;
             }
 
             if ("POST".equals(method) && "/api/rooms".equals(path)) {
                 Account account = requireAccount(ex);
                 if (account == null) return;
-                if (!STATE.players.isEmpty() && !"game_over".equals(STATE.phase)) {
-                    writeJson(ex, 409, Map.of("error", "Reset or finish the active room before creating a new hosted table."));
-                    return;
-                }
                 JsonObject b = readBodyJson(ex);
                 String name = text(b, "name");
                 String mode = text(b, "networkMode");
@@ -343,11 +340,85 @@ public class Main {
                 }
                 Room room = Room.create(name, account.id, mode.isBlank() ? "local" : mode);
                 DB.data.rooms.add(room);
-                DB.data.activeRoomId = room.id;
-                STATE.reset();
+                if (STATE.players.isEmpty() && !activeGameInProgress()) {
+                    DB.data.activeRoomId = room.id;
+                    STATE.reset();
+                }
                 DB.save();
                 writeJson(ex, 201, Map.of("room", roomPayload(room)));
                 return;
+            }
+
+            if (path.startsWith("/api/rooms/") && ("PATCH".equals(method) || "DELETE".equals(method) || path.endsWith("/moderate"))) {
+                Account moderator = requireAccount(ex);
+                if (moderator == null) return;
+                String suffix = path.substring("/api/rooms/".length());
+                String roomId = suffix.endsWith("/moderate") ? suffix.substring(0, suffix.length() - "/moderate".length()) : suffix;
+                Room room = DB.findRoom(roomId);
+                if (room == null || room.disbanded) { writeJson(ex, 404, Map.of("error", "Room not found.")); return; }
+                if (!canManageRoom(moderator, room)) { writeJson(ex, 403, Map.of("error", "Only this room's host or an admin can manage it.")); return; }
+                if ("PATCH".equals(method) && !suffix.endsWith("/moderate")) {
+                    JsonObject b = readBodyJson(ex);
+                    String name = text(b, "name");
+                    String mode = text(b, "networkMode");
+                    if (name.isBlank() || name.length() > 32 || !List.of("local", "internet").contains(mode)) {
+                        writeJson(ex, 400, Map.of("error", "Use a 1-32 character room name and local/internet mode.")); return;
+                    }
+                    room.name = name; room.networkMode = mode;
+                    DB.save(); writeJson(ex, 200, Map.of("room", roomManagementPayload(room, moderator))); return;
+                }
+                if ("DELETE".equals(method) && !suffix.endsWith("/moderate")) {
+                    room.disbanded = true;
+                    room.observerAccountIds.clear();
+                    if (room.id.equals(DB.data.activeRoomId)) {
+                        if (activeGameInProgress()) {
+                            voidGame("The room was disbanded by " + moderator.displayName + ".", null);
+                            for (Player p : STATE.players) {
+                                if (!STATE.playerIdsToRemoveOnLobbyReturn.contains(p.id)) STATE.playerIdsToRemoveOnLobbyReturn.add(p.id);
+                            }
+                        } else { STATE.returnToLobbyKeepingSeats(); STATE.players.clear(); }
+                    }
+                    DB.save(); writeJson(ex, 200, Map.of("ok", true)); return;
+                }
+                if ("POST".equals(method) && suffix.endsWith("/moderate")) {
+                    JsonObject b = readBodyJson(ex);
+                    String action = text(b, "action");
+                    String accountId = text(b, "accountId");
+                    if (!List.of("kick", "timeout", "evict", "unban").contains(action)) { writeJson(ex, 400, Map.of("error", "Unknown moderation action.")); return; }
+                    if ("evict".equals(action) && !moderator.isAdmin) { writeJson(ex, 403, Map.of("error", "Permanent eviction is admin-only.")); return; }
+                    if (moderator.id.equals(accountId)) { writeJson(ex, 400, Map.of("error", "Use leave/switch mode for your own account.")); return; }
+                    Account target = DB.findAccount(accountId);
+                    if (target == null) { writeJson(ex, 404, Map.of("error", "Account not found.")); return; }
+                    if (!moderator.isAdmin && (target.isAdmin || accountId.equals(room.hostAccountId))) { writeJson(ex, 403, Map.of("error", "Hosts cannot remove administrators or the room owner.")); return; }
+                    if ("unban".equals(action)) {
+                        if (!moderator.isAdmin && room.blockedUntil.getOrDefault(accountId, 0L) == Long.MAX_VALUE) { writeJson(ex, 403, Map.of("error", "Only an administrator can lift an eviction.")); return; }
+                        room.blockedUntil.remove(accountId); DB.save(); writeJson(ex, 200, Map.of("ok", true)); return;
+                    }
+                    Player player = findPlayerByAccount(accountId);
+                    boolean seated = player != null && room.id.equals(player.roomId);
+                    if (!seated && !room.observerAccountIds.contains(accountId)) { writeJson(ex, 404, Map.of("error", "This account is not in the room.")); return; }
+                    int duration = 300;
+                    if ("timeout".equals(action) && b.has("durationSec")) {
+                        if (!b.get("durationSec").isJsonPrimitive()) { writeJson(ex, 400, Map.of("error", "Timeout must be a whole number of seconds.")); return; }
+                        String value = text(b, "durationSec");
+                        if (!value.matches("[0-9]{1,5}")) { writeJson(ex, 400, Map.of("error", "Timeout must be a whole number of seconds.")); return; }
+                        duration = Integer.parseInt(value);
+                    }
+                    if ("timeout".equals(action) && (duration < 30 || duration > 86400)) { writeJson(ex, 400, Map.of("error", "Timeout must be 30-86400 seconds.")); return; }
+                    if ("timeout".equals(action)) room.blockedUntil.put(accountId, System.currentTimeMillis() + duration * 1000L);
+                    if ("evict".equals(action)) room.blockedUntil.put(accountId, Long.MAX_VALUE);
+                    target.roomNotice = "You were " + ("timeout".equals(action) ? "timed out" : "evict".equals(action) ? "evicted" : "kicked") + " from " + room.name + " by " + moderator.displayName + ".";
+                    room.observerAccountIds.remove(accountId);
+                    if (seated) {
+                        if (shouldVoidForDepartingPlayer(player)) voidGame(player.name + " was removed from the room by " + moderator.displayName + ".", player.id);
+                        if (activeGameInProgress() || "game_over".equals(STATE.phase)) {
+                            player.removedFromRoom = true;
+                            if (!STATE.playerIdsToRemoveOnLobbyReturn.contains(player.id)) STATE.playerIdsToRemoveOnLobbyReturn.add(player.id);
+                        } else { STATE.players.remove(player); }
+                    }
+                    DB.save(); writeJson(ex, 200, Map.of("ok", true)); return;
+                }
+                writeJson(ex, 405, Map.of("error", "Method not allowed.")); return;
             }
 
             if ("POST".equals(method) && path.startsWith("/api/rooms/") && path.endsWith("/join")) {
@@ -355,10 +426,18 @@ public class Main {
                 if (account == null) return;
                 String roomId = path.substring("/api/rooms/".length(), path.length() - "/join".length());
                 Room room = DB.findRoom(roomId);
-                if (room == null) {
+                if (room == null || room.disbanded) {
                     writeJson(ex, 404, Map.of("error", "Room not found."));
                     return;
                 }
+                if (room.blockedUntil.getOrDefault(account.id, 0L) > System.currentTimeMillis()) {
+                    writeJson(ex, 403, Map.of("error", "You are timed out or evicted from this room.")); return;
+                }
+                JsonObject joinBody = readBodyJson(ex);
+                String joinMode = text(joinBody, "mode");
+                if (!joinMode.isBlank() && !List.of("player", "observer").contains(joinMode)) { writeJson(ex, 400, Map.of("error", "Choose player or observer mode.")); return; }
+                boolean observer = "observer".equals(joinMode);
+                if (observer && !canManageRoom(account, room)) { writeJson(ex, 403, Map.of("error", "Observer mode is available to the host and administrators.")); return; }
                 Room active = DB.defaultRoom();
                 if (active != null && !active.id.equals(room.id)) {
                     if (!STATE.players.isEmpty() && !"game_over".equals(STATE.phase)) {
@@ -368,7 +447,16 @@ public class Main {
                     DB.data.activeRoomId = room.id;
                     STATE.reset();
                 }
-                if (!"lobby".equals(STATE.phase) && STATE.players.stream().noneMatch(p -> account.id.equals(p.accountId))) {
+                if (observer) {
+                    Player existingSeat = findPlayerByAccount(account.id);
+                    if (existingSeat != null) {
+                        if (!"lobby".equals(STATE.phase)) { writeJson(ex, 409, Map.of("error", "Return to the lobby before switching a player seat to observer.")); return; }
+                        STATE.players.remove(existingSeat);
+                    }
+                    if (!room.observerAccountIds.contains(account.id)) room.observerAccountIds.add(account.id);
+                    DB.save(); writeJson(ex, 200, Map.of("observer", true, "room", roomManagementPayload(room, account))); return;
+                }
+                if (!"lobby".equals(STATE.phase) && findPlayerByAccount(account.id) == null) {
                     writeJson(ex, 409, Map.of("error", "Game already started."));
                     return;
                 }
@@ -380,6 +468,8 @@ public class Main {
                     STATE.players.add(existing);
                 }
                 existing.roomId = room.id;
+                account.roomNotice = "";
+                room.observerAccountIds.remove(account.id);
                 markPlayerInteraction(existing);
                 room.lastActiveAt = Instant.now().toString();
                 DB.save();
@@ -399,7 +489,8 @@ public class Main {
                 if (account == null) return;
                 Player player = findPlayerByAccount(account.id);
                 if (player == null) {
-                    writeJson(ex, 200, Map.of("playerId", "", "joined", false));
+                    Room room = DB.defaultRoom();
+                    writeJson(ex, 200, Map.of("playerId", "", "joined", false, "observer", room.observerAccountIds.contains(account.id) && !room.disbanded, "notice", nullToEmpty(account.roomNotice)));
                     return;
                 }
                 writeJson(ex, 200, Map.of(
@@ -414,6 +505,7 @@ public class Main {
                 Account account = requireAccount(ex);
                 if (account == null) return;
                 Room room = DB.defaultRoom();
+                if (room.disbanded || room.blockedUntil.getOrDefault(account.id, 0L) > System.currentTimeMillis()) { writeJson(ex, 403, Map.of("error", "Room is closed or you are restricted from joining.")); return; }
                 Player existing = findPlayerByAccount(account.id);
                 if (existing != null) {
                     markPlayerInteraction(existing);
@@ -439,6 +531,7 @@ public class Main {
                 if (account == null) return;
                 String pid = path.substring("/api/player-state/".length());
                 Player p = findPlayer(pid);
+                if (p != null && p.removedFromRoom && account.id.equals(p.accountId)) { writeJson(ex, 403, Map.of("error", "You were removed from this room by a moderator.")); return; }
                 if (p == null || !account.id.equals(p.accountId)) {
                     writeJson(ex, 404, Map.of("error", "Player not found."));
                     return;
@@ -822,6 +915,7 @@ public class Main {
     }
 
     private static void startGame(HttpExchange ex) throws IOException {
+        if (DB.defaultRoom().disbanded) { writeJson(ex, 409, Map.of("error", "This room was disbanded. Create or join an open room.")); return; }
         if (!"lobby".equals(STATE.phase)) {
             writeJson(ex, 409, Map.of("error", "Game already started."));
             return;
@@ -1096,7 +1190,7 @@ public class Main {
         if (account == null) return null;
         String pid = body.has("playerId") ? body.get("playerId").getAsString() : "";
         Player p = findPlayer(pid);
-        if (p == null || !account.id.equals(p.accountId)) {
+        if (p == null || p.removedFromRoom || !account.id.equals(p.accountId)) {
             writeJson(ex, 403, Map.of("error", "Player session mismatch."));
             return null;
         }
@@ -1116,7 +1210,11 @@ public class Main {
     private static boolean canManageGame(Account account) {
         if (account.isAdmin) return true;
         Room room = DB.defaultRoom();
-        return room != null && account.id.equals(room.hostAccountId);
+        return room != null && canManageRoom(account, room);
+    }
+
+    private static boolean canManageRoom(Account account, Room room) {
+        return account.isAdmin || (account.id.equals(room.hostAccountId) && room.blockedUntil.getOrDefault(account.id, 0L) <= System.currentTimeMillis());
     }
 
     private static void startPhaseTicker() {
@@ -1262,6 +1360,7 @@ public class Main {
         payload.put("mafiaChat", manager ? chatPayload(STATE.mafiaChat) : List.of());
         payload.put("playerChat", manager ? chatPayload(STATE.playerChat) : List.of());
         payload.put("canManage", manager);
+        payload.put("viewerMode", findPlayerByAccount(account.id) == null ? "observer" : "player");
         payload.put("room", roomPayload(DB.defaultRoom()));
         return payload;
     }
@@ -1389,6 +1488,36 @@ public class Main {
                 "createdAt", r.createdAt,
                 "lastActiveAt", r.lastActiveAt
         );
+    }
+
+    private static Map<String, Object> roomManagementPayload(Room room, Account viewer) {
+        Map<String, Object> result = new LinkedHashMap<>(roomPayload(room));
+        boolean manager = canManageRoom(viewer, room);
+        result.put("canManage", manager);
+        result.put("canObserve", manager);
+        if (manager) {
+            List<Map<String, Object>> members = new ArrayList<>();
+            for (Player player : STATE.players) {
+                if (!room.id.equals(player.roomId) || player.removedFromRoom) continue;
+                Account account = DB.findAccount(player.accountId);
+                if (account == null) continue;
+                members.add(Map.of("accountId", account.id, "name", player.name, "mode", "player", "isAdmin", account.isAdmin));
+            }
+            for (String id : room.observerAccountIds) {
+                Account account = DB.findAccount(id);
+                if (account != null) members.add(Map.of("accountId", id, "name", account.displayName, "mode", "observer", "isAdmin", account.isAdmin));
+            }
+            result.put("members", members);
+            List<Map<String, Object>> restrictions = new ArrayList<>();
+            for (Map.Entry<String, Long> entry : room.blockedUntil.entrySet()) {
+                if (entry.getValue() <= System.currentTimeMillis()) continue;
+                Account account = DB.findAccount(entry.getKey());
+                restrictions.add(Map.of("accountId", entry.getKey(), "name", account == null ? "Deleted account" : account.displayName,
+                        "permanent", entry.getValue() == Long.MAX_VALUE, "expiresAt", entry.getValue() == Long.MAX_VALUE ? 0 : entry.getValue()));
+            }
+            result.put("restrictions", restrictions);
+        }
+        return result;
     }
 
     private static void writeJson(HttpExchange ex, int status, Object data) throws IOException {
@@ -1607,7 +1736,7 @@ public class Main {
     private static int aliveCount() { return (int) STATE.players.stream().filter(p -> p.alive).count(); }
     private static boolean isAlivePlayer(String id) { Player p = findPlayer(id); return p != null && p.alive; }
     private static Player findPlayer(String id) { return STATE.players.stream().filter(p -> p.id.equals(id)).findFirst().orElse(null); }
-    private static Player findPlayerByAccount(String accountId) { return STATE.players.stream().filter(p -> accountId.equals(p.accountId)).findFirst().orElse(null); }
+    private static Player findPlayerByAccount(String accountId) { return STATE.players.stream().filter(p -> !p.removedFromRoom && accountId.equals(p.accountId)).findFirst().orElse(null); }
     private static boolean hasMinimumTestRoles(RoleConfig cfg) { return cfg.mafia >= 1 && (cfg.sheriff + cfg.doctor + cfg.vigilante) >= 1 && cfg.town >= 1; }
     private static boolean isTownAligned(String role) { return role != null && !"Mafia".equals(role) && !"Jester".equals(role); }
     private static boolean armedVigilanteMorningDuel() {
@@ -1702,6 +1831,10 @@ public class Main {
                     if (data == null) data = new DatabaseData();
                     if (data.accounts == null) data.accounts = new ArrayList<>();
                     if (data.rooms == null) data.rooms = new ArrayList<>();
+                    for (Room room : data.rooms) {
+                        if (room.blockedUntil == null) room.blockedUntil = new HashMap<>();
+                        if (room.observerAccountIds == null) room.observerAccountIds = new ArrayList<>();
+                    }
                     if (data.sessions == null) data.sessions = new HashMap<>();
                     if (data.activeRoomId == null || data.activeRoomId.isBlank()) {
                         data.activeRoomId = data.rooms.isEmpty() ? "" : data.rooms.get(0).id;
@@ -1788,6 +1921,7 @@ public class Main {
 
     private static final class Account {
         String id, email, username, displayName, salt, passwordHash, avatarDataUrl, createdAt;
+        String roomNotice = "";
         boolean isAdmin;
         int scoreGames, scoreWins, scoreLosses;
 
@@ -1821,6 +1955,9 @@ public class Main {
 
     private static final class Room {
         String id, name, hostAccountId, networkMode, createdAt, lastActiveAt;
+        boolean disbanded;
+        Map<String, Long> blockedUntil = new HashMap<>();
+        List<String> observerAccountIds = new ArrayList<>();
         static Room create(String name, String hostAccountId, String mode) {
             Room r = new Room();
             r.id = UUID.randomUUID().toString();
@@ -1992,6 +2129,7 @@ public class Main {
     private static final class Player {
         String id, accountId, roomId, name, role;
         boolean alive;
+        boolean removedFromRoom;
         String lastDoctorTarget;
         String lastSheriffResult;
         String lastSheriffTargetName;

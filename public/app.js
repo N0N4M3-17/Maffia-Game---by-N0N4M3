@@ -223,6 +223,7 @@ async function refreshMe() {
     state.account = data.account;
     showApp(true);
     updateAccountUi();
+    await recoverPlayerSeat();
     startPolling();
   } catch {
     state.account = null;
@@ -272,6 +273,13 @@ async function afterLoginRefresh() {
 async function recoverPlayerSeat() {
   try {
     const seat = await api('/api/my-player');
+    if (seat.notice) setMessage(seat.notice, true);
+    if (seat.observer) {
+      state.playerId = null;
+      localStorage.removeItem('playerId');
+      showTab('host');
+      return true;
+    }
     if (seat.joined && seat.playerId) {
       state.playerId = seat.playerId;
       localStorage.setItem('playerId', seat.playerId);
@@ -297,6 +305,9 @@ async function refreshServerInfo() {
 async function refreshRooms() {
   const data = await api('/api/rooms');
   state.rooms = data.rooms || [];
+  const current = state.rooms.find((room) => room.active) || state.rooms[0];
+  $('observe-default-btn').classList.toggle('hidden', !current?.canObserve);
+  $('join-default-btn').textContent = current?.canObserve ? 'Join as player' : 'Join current room';
   renderRooms();
 }
 
@@ -312,10 +323,67 @@ function renderRooms() {
         <strong>${escapeHtml(room.name)}${room.active ? ' <em>Active</em>' : ''}</strong>
         <span>${room.networkMode === 'internet' ? 'Internet-ready' : 'Local LAN'}</span>
       </div>
-      <button class="secondary-button" data-room-join="${room.id}">Join</button>
+      <div class="room-join-actions">
+        <button class="secondary-button" data-room-join="${room.id}">${room.canObserve ? 'Join as player' : 'Join'}</button>
+        ${room.canObserve ? `<button class="primary-button" data-room-join="${room.id}" data-room-mode="observer">Observe</button>` : ''}
+        ${room.canManage ? `<button class="ghost-button" data-room-manage="${room.id}">Manage room</button>` : ''}
+      </div>
     </article>
   `).join(''))) return;
-  list.querySelectorAll('[data-room-join]').forEach((btn) => btn.addEventListener('click', () => joinRoom(btn.dataset.roomJoin)));
+  list.querySelectorAll('[data-room-join]').forEach((btn) => btn.addEventListener('click', () => joinRoom(btn.dataset.roomJoin, btn.dataset.roomMode || 'player').catch((err) => setMessage(err.message, true))));
+  list.querySelectorAll('[data-room-manage]').forEach((btn) => btn.addEventListener('click', () => openRoomManager(btn.dataset.roomManage)));
+}
+
+function openRoomManager(roomId) {
+  const room = state.rooms.find((item) => item.id === roomId);
+  if (!room?.canManage) return;
+  const dialog = $('room-manager-dialog');
+  const reportRoomError = (err) => { setMessage(err.message, true); const message = $('room-manager-message'); if (message) message.textContent = err.message; };
+  dialog.innerHTML = `
+    <h2 id="room-manager-title">${escapeHtml(room.name)}</h2>
+    <p id="room-manager-message" role="alert"></p>
+    <form id="room-details-form" class="form-stack">
+      <label>Room name<input name="name" value="${escapeHtml(room.name)}" maxlength="32" required></label>
+      <label>Access mode<select name="networkMode"><option value="local" ${room.networkMode === 'local' ? 'selected' : ''}>Local LAN</option><option value="internet" ${room.networkMode === 'internet' ? 'selected' : ''}>Internet-ready</option></select></label>
+      <button class="primary-button">Save details</button>
+    </form>
+    <h3>People in room</h3>
+    <div class="room-members">${(room.members || []).map((member) => `
+      <article class="room-member"><div><strong>${escapeHtml(member.name)}</strong><span>${escapeHtml(member.mode)}${member.isAdmin ? ' / admin' : ''}</span></div>
+        ${member.accountId !== state.account?.id && (state.account?.isAdmin || !member.isAdmin) ? `<div class="room-member-actions">
+          <button class="secondary-button" data-moderate="kick" data-account="${member.accountId}">Kick</button>
+          <select aria-label="Timeout duration for ${escapeHtml(member.name)}" id="timeout-${member.accountId}"><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option></select>
+          <button class="secondary-button" data-moderate="timeout" data-account="${member.accountId}">Timeout</button>
+          ${state.account?.isAdmin ? `<button class="danger-button" data-moderate="evict" data-account="${member.accountId}">Evict</button>` : ''}
+        </div>` : ''}
+      </article>`).join('') || '<p class="muted">No one has joined yet.</p>'}</div>
+    <h3>Room restrictions</h3>
+    <div class="room-restrictions">${(room.restrictions || []).map((item) => `<article class="room-member"><div><strong>${escapeHtml(item.name)}</strong><span>${item.permanent ? 'Evicted' : `Until ${escapeHtml(new Date(item.expiresAt).toLocaleString())}`}</span></div><button class="secondary-button" data-moderate="unban" data-account="${item.accountId}">Lift restriction</button></article>`).join('') || '<p class="muted">No active restrictions.</p>'}</div>
+    <div class="room-manager-footer"><button type="button" class="danger-button" id="disband-room">Disband room</button><button type="button" class="secondary-button" id="close-room-manager">Close</button></div>`;
+  if (!dialog.open) dialog.showModal();
+  $('close-room-manager').addEventListener('click', () => dialog.close());
+  $('room-details-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api(`/api/rooms/${roomId}`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget))) });
+      await refreshRooms(); dialog.close(); openRoomManager(roomId); setMessage('Room details saved.');
+    } catch (err) { reportRoomError(err); }
+  });
+  dialog.querySelectorAll('[data-moderate]').forEach((button) => button.addEventListener('click', async () => {
+    const action = button.dataset.moderate;
+    const accountId = button.dataset.account;
+    const member = (room.members || []).find((item) => item.accountId === accountId);
+    if (!await confirmTableAction(`${action === 'unban' ? 'Lift restriction' : action === 'evict' ? 'Evict' : action === 'timeout' ? 'Timeout' : 'Kick'} ${member?.name || 'this account'}?`, action === 'evict' ? 'This account cannot rejoin until its room restriction is lifted.' : action === 'unban' ? 'This account will be allowed to join this room again.' : 'Removing a living player during a round voids the game.')) return;
+    try {
+      await api(`/api/rooms/${roomId}/moderate`, { method: 'POST', body: JSON.stringify({ action, accountId, durationSec: Number($(`timeout-${accountId}`)?.value || 300) }) });
+      await refreshAll(); await refreshRooms(); dialog.close(); openRoomManager(roomId); setMessage('Room moderation updated.');
+    } catch (err) { reportRoomError(err); }
+  }));
+  $('disband-room').addEventListener('click', async () => {
+    if (!await confirmTableAction('Disband this room?', 'The room will close to new joins. An active round will be voided and its players returned after the outcome screen.')) return;
+    try { await api(`/api/rooms/${roomId}`, { method: 'DELETE' }); dialog.close(); await refreshAll(); setMessage('Room disbanded.'); }
+    catch (err) { reportRoomError(err); }
+  });
 }
 
 async function createRoom(form) {
@@ -326,8 +394,16 @@ async function createRoom(form) {
   setMessage('Room created.');
 }
 
-async function joinRoom(roomId) {
-  const data = await api(`/api/rooms/${roomId}/join`, { method: 'POST', body: '{}' });
+async function joinRoom(roomId, mode = 'player') {
+  const data = await api(`/api/rooms/${roomId}/join`, { method: 'POST', body: JSON.stringify({ mode }) });
+  if (data.observer) {
+    state.playerId = null;
+    localStorage.removeItem('playerId');
+    showTab('host');
+    await refreshAll();
+    setMessage(`Observing ${data.room?.name || 'room'}.`);
+    return;
+  }
   state.playerId = data.playerId;
   localStorage.setItem('playerId', data.playerId);
   state.activityDirty = true;
@@ -584,7 +660,7 @@ function statCard(label, value, tone = '') {
 function gmVisiblePlayers(gm) {
   const accountId = state.account?.id;
   const players = gm.players || [];
-  if (!gm.canManage || !accountId) return players;
+  if (!gm.canManage || !accountId || gm.viewerMode === 'player') return players;
   return players.filter((player) => player.accountId !== accountId);
 }
 
@@ -1643,6 +1719,10 @@ function bindEvents() {
     const room = state.rooms.find((candidate) => candidate.active) || state.rooms[0];
     if (room) joinRoom(room.id).catch((err) => setMessage(err.message, true));
     else setMessage('No room is available yet.', true);
+  });
+  $('observe-default-btn').addEventListener('click', () => {
+    const room = state.rooms.find((candidate) => candidate.active) || state.rooms[0];
+    if (room) joinRoom(room.id, 'observer').catch((err) => setMessage(err.message, true));
   });
   $('save-setup-btn').addEventListener('click', () => saveSetup().catch((err) => setMessage(err.message, true)));
   $('launch-game-btn').addEventListener('click', () => launchGame().catch((err) => setMessage(err.message, true)));

@@ -23,7 +23,7 @@ function nodeCheck(rel) {
   }
 }
 
-for (const file of ['index.html', 'app.js', 'styles.css']) {
+for (const file of ['index.html', 'app.js', 'styles.css', 'noir.css', 'assets/card-back.svg', 'assets/joker.svg', 'vendor/lucide.js', 'vendor/lucide-LICENSE']) {
   assert(read(`public/${file}`) === read(`src/main/resources/public/${file}`), `${file} differs between public mirrors`);
 }
 

@@ -203,6 +203,7 @@
               <div id="join-state" class="empty-state">
                 <p>Join a room to take a seat.</p>
                 <button id="join-default-btn" class="primary-button">Join current room</button>
+                <button id="observe-default-btn" class="secondary-button hidden">Observe current room</button>
               </div>
               <div id="role-state" class="hidden">
                 <div id="deal-stage" class="deal-stage hidden"></div>
@@ -323,6 +324,7 @@
       </section>
     </main>
   </div>
+  <dialog id="room-manager-dialog" aria-labelledby="room-manager-title"></dialog>
   <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
     <h2 id="confirm-title">Confirm action</h2>
     <p id="confirm-description"></p>

@@ -29,6 +29,9 @@ Five scenes: account/profile; lobby/setup; full-space dealing; gameplay/GM obser
 - [x] Editable name and profile image with format and 100x100 validation.
 - [x] Aggregate games/wins/losses on profiles.
 - [x] Named rooms, one active table, LAN invite, optional HTTPS public-origin invite.
+- [x] Host/admin room creation, metadata editing, and disbanding; inactive room management does not replace the current table.
+- [x] Host kick and timed room bans; admin permanent eviction; permitted restriction lifting; bans persist locally and guard both join endpoints.
+- [x] Explicit host/admin observer or player join; observer has no role seat and retains room-management authority. Player/observer switching is restricted during an active round.
 - [x] Mafia, Sheriff, Doctor, Vigilante, Jester, Town, and ammunition setup.
 - [x] Role-count validation, minimum test composition, editable timers, public-tally setting, lobby seat removal.
 - [ ] **Missing:** per-game history, individual result records, and score deltas.
@@ -53,6 +56,7 @@ Five scenes: account/profile; lobby/setup; full-space dealing; gameplay/GM obser
 - [x] Full-workspace GM board: roles, counts, controls, event summaries, pending players, separate chat previews.
 - [x] Read-only GM-style dead-player overview and server-side action/chat permissions.
 - [x] GM public reveal, morning elimination, living-role reshuffle without revival, and void controls.
+- [x] Mid-game living-player moderation and active-room disbanding produce a no-score void reason, then return the remaining table to lobby.
 - [x] Animated win/loss/void outcomes, winning faction/identity, void reason.
 - [x] Automatic lobby return, retaining remaining seats and timer configuration.
 - [x] Interaction heartbeat and alive-player inactivity: twice the longest phase, minimum 30 seconds.
@@ -84,6 +88,7 @@ Five scenes: account/profile; lobby/setup; full-space dealing; gameplay/GM obser
 - [x] Authenticated player ownership, role/phase-gated payloads, dead-player action restrictions implemented.
 - [x] Initial JUnit tests: majority, ties, abstentions, winner decisions, optional-role ordering.
 - [x] Browser regression suite: responsive scenes, peeking, polling, dialogs, observation, outcomes, inactivity warning, reduced motion.
+- [x] Real Java API room-management coverage: host scope, observer/player switching, timeout persistence and bypass rejection, admin eviction, unban, mid-round removal, disbanding, and portrait management dialog.
 - [x] GM runbook, asset licences, CI static/Java checks, release checklist.
 - [ ] **Partial:** validation exists; bounded request bodies, duplicate-name policy, abuse/rate controls remain.
 - [ ] **Verification Pending:** complete API privacy/authorization matrix, including deliberate reveals and observer visibility.
