@@ -1,0 +1,195 @@
+/* Shared local-only Noir Card Table design system. */
+:root {
+  --bg: #111312; --panel: #1b1e1c; --panel-2: #252925;
+  --line: #454b43; --text: #f0f2ec; --muted: #bbc2b6;
+  --gold: #d9bc78; --red: #933b40; --red-2: #f18387;
+  --green: #82c5a4; --blue: #90bcdf;
+  --shadow: 0 12px 32px #0004; --radius: 6px;
+}
+html { scroll-padding-top: 90px; }
+body { background: var(--bg); letter-spacing: 0; }
+button, input, textarea, select { transition: border-color .16s ease, background-color .16s ease; }
+button { min-height: 44px; touch-action: manipulation; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 4px; }
+input:focus, textarea:focus, select:focus { border-color: var(--gold); }
+input, select, textarea { background: #141714; border-radius: 4px; }
+input[type="checkbox"] { accent-color: var(--gold); width: 20px; height: 20px; min-height: 20px; }
+h1, h2, h3, h4, p { overflow-wrap: anywhere; }
+h1, h2, .deal-header strong, .outcome-copy h3 { font-family: Georgia, 'Times New Roman', serif; font-weight: 500; }
+h2 { font-size: 30px; line-height: 1.12; }
+h3 { font-size: 19px; }
+.eyebrow { color: var(--gold); font-size: 11px; font-weight: 700; letter-spacing: 0; }
+.app-shell { grid-template-columns: 224px minmax(0, 1fr); }
+.sidebar { background: #151815; border-color: var(--line); padding: 24px 16px; }
+.brand { padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.brand-mark { border: 1px solid var(--gold); background: #25271e; color: var(--gold); border-radius: 4px; font-family: Georgia, serif; }
+.brand h1 { font-size: 23px; }
+.brand p { font-size: 12px; color: var(--muted); }
+.nav { gap: 8px; }
+.nav-item { display: flex; align-items: center; gap: 12px; min-height: 46px; border-radius: 4px; border: 1px solid transparent; }
+.nav-item.active { background: #2a2e25; border-color: #6f6849; color: var(--gold); }
+.nav-icon { width: 19px; height: 19px; flex-shrink: 0; }
+.workspace { max-width: none; min-width: 0; padding: 24px; }
+.workspace, .tab, .content-grid, .gm-console-panel, .gm-console, .gm-detail-drawer, .gm-feed-grid, .gm-stat-grid { min-width: 0; }
+.host-grid.gm-command-view:has(#gm-setup-panel.hidden) { grid-template-columns: minmax(0, 1fr); }
+.host-grid.gm-command-view .gm-console-panel { width: 100%; max-width: 100%; }
+.tab.scene-tab { margin-inline: 0; }
+.topbar { background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 0 22px; margin-bottom: 22px; }
+.panel { border-radius: 0; background: transparent; border: 0; border-top: 1px solid var(--line); padding: 20px 0; box-shadow: none; }
+.panel-title { margin-bottom: 18px; }
+.content-grid { gap: 24px; }
+.auth-view { min-height: calc(100dvh - 48px); align-items: center; }
+.auth-panel { max-width: 880px; width: 100%; }
+.auth-panel > div:first-child { padding-bottom: 24px; }
+.auth-panel h2 { font-size: 38px; max-width: 520px; }
+.auth-grid { gap: 32px; }
+.primary-button { background: var(--gold); color: #171a14; border: 1px solid var(--gold); border-radius: 4px; font-weight: 750; }
+.primary-button:hover { background: #ead19b; }
+.secondary-button { background: #30362e; border: 1px solid #59614f; color: var(--text); border-radius: 4px; }
+.ghost-button { border: 1px solid var(--line); border-radius: 4px; }
+.danger-button { background: #652d32; border: 1px solid #bd6b70; color: #fff0f0; border-radius: 4px; }
+.session-card, .room-row, .player-row { background: #1b201b; border-color: var(--line); border-radius: 6px; }
+.session-copy, .player-row > div { min-width: 0; }
+.player-row strong, .room-row strong { white-space: normal; overflow-wrap: anywhere; }
+.avatar { background: #343d32; color: #eed396; border: 1px solid #5d6756; }
+.room-row { padding: 16px; }
+.stepper { background: #1b201b; border-color: var(--line); border-radius: 4px; }
+.stepper button { min-width: 44px; min-height: 44px; }
+.phase-guide { background: #24291f; border-color: #5d6046; border-radius: 4px; }
+.phase-guide strong { color: #ead19b; }
+.mobile-action-tray { border-radius: 4px; background: #1d241d; }
+.role-card { min-height: 260px; max-width: 360px; width: 100%; margin-inline: auto; border-radius: 8px; background: #1e261e; color: var(--text); animation: none; }
+.role-card.masked { background: #202b25 url('/assets/card-back.svg') center / cover; border-color: #8b9b81; }
+.role-card.masked .role-symbol { background: #1b241de8; }
+.role-card.masked p, .role-card.masked #role-name { background: #17231ded; padding: 4px; border-radius: 3px; }
+.role-card.masked #role-name { font-family: Georgia, serif; font-size: 34px; }
+.role-card span { font-family: Georgia, serif; font-size: 38px; line-height: 1.1; }
+.role-card.revealed { background: #222720; animation: rolePeek .42s ease both; }
+.role-card.revealed.mafia { background: #321e21; }
+.role-card.revealed.sheriff { background: #1c2933; }
+.role-card.revealed.doctor { background: #1d3027; }
+.role-card.revealed.vigilante { background: #302c1f; }
+.role-card.revealed.jester { background: #2d2332; }
+.role-card.revealed.jester #role-symbol { background: url('/assets/joker.svg') center / contain no-repeat; }
+.role-card.revealed.jester #role-symbol svg { visibility: hidden; }
+.play-grid { transition: background-color .3s ease; background: transparent; }
+.play-grid.role-peeking.role-mafia { background: #241719; }
+.play-grid.role-peeking.role-sheriff { background: #17232b; }
+.play-grid.role-peeking.role-doctor { background: #18261e; }
+.play-grid.role-peeking.role-vigilante { background: #27251b; }
+.play-grid.role-peeking.role-jester { background: #271e2b; }
+.play-grid .panel { padding-inline: 12px; }
+.target-tile { background: #1b211c; border-color: #596250; min-height: 122px; border-radius: 6px; }
+.target-tile > span:last-child { white-space: normal; overflow-wrap: anywhere; }
+.target-tile.selected { background: #293e32; border-color: #a2dbb6; box-shadow: inset 0 0 0 1px #a2dbb6; }
+.target-tile:disabled { opacity: .8; }
+.selected-target-summary, .result-card { background: #212c23; border-color: #607154; border-radius: 4px; }
+.chat-log { background: #141914; border-color: var(--line); border-radius: 4px; overscroll-behavior: contain; }
+.chat-log div { padding-block: 6px; }
+.chat-form { position: relative; gap: 8px; }
+.chat-form button { min-width: 60px; }
+.chat-form input { min-width: 0; }
+.deal-stage { background: #17251f; border-color: #747653; }
+.deal-header { padding: 24px 8px; background: #151c17ed; }
+.deal-header strong { font-size: 30px; color: #ecd59e; }
+.play-grid.deal-scene .deal-header strong { font-size: 36px; line-height: 1.12; }
+.play-grid.deal-scene .deal-stage { min-height: 380px; }
+.deal-card-back { background: #26352c url('/assets/card-back.svg') center / cover; border-color: #bba771; }
+.deal-card-back span { visibility: hidden; }
+.deal-card-front { background: #20271f; }
+.deal-card-front.jester { background: #25212d url('/assets/joker.svg') center 23% / 62% no-repeat; padding-top: 90px; }
+.deal-card-front.jester > svg { visibility: hidden; }
+.deal-card-front strong { font-family: Georgia, serif; font-size: 20px; }
+.gm-command-shell, .gm-table-stage { background: #121813; border-color: #716a4a; }
+.gm-command-rail, .gm-event-log { background: #191e19; border-color: var(--line); }
+.gm-stage-header { background: #24291f; border-color: var(--line); }
+.gm-stage-header span { color: var(--muted); }
+.gm-player-grid { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.gm-player-card { background: #242c22; border-color: #59634f; }
+.gm-player-card strong { white-space: normal; overflow-wrap: anywhere; }
+.gm-player-card.dead { background: #2b2022; opacity: .8; }
+.gm-role-row { background: #272e23; }
+.gm-log-line span, .gm-phase-box span, .gm-rail-section h4, .gm-event-log h4 span, .gm-night-summary h5 { color: #b4bcaa; }
+.gm-master-badge { min-height: 44px; }
+.gm-control-stack button, .gm-tools button { min-height: 44px; }
+.gm-tools { background: #22291f; border-color: #747653; }
+.feed-card, .stat-card { background: #1b211b; border-color: var(--line); border-radius: 4px; }
+.feed-lines div { background: #222a21; border-radius: 4px; }
+.game-over-scene { background: #19241d; border-color: #7e7856; min-height: 340px; }
+.victor-card { background: #263024; width: 190px; max-width: 100%; padding: 12px; }
+.victor-card strong { font-family: Georgia, serif; font-size: 27px; }
+.victor-card.jester { background: #292230 url('/assets/joker.svg') center 25% / 60% no-repeat; padding-top: 140px; }
+.victor-card.jester > span { visibility: hidden; }
+.outcome-copy h3 { font-size: 52px; line-height: 1.08; }
+.outcome-copy p:not(.eyebrow) { font-size: 18px; }
+.outcome-copy .auto-return-copy { font-size: 13px; }
+.mobile-play-tabs { display: none; }
+.connection-banner, .inactivity-banner { padding: 12px 16px; border: 1px solid #747653; background: #303326; color: #f0e2b9; border-radius: 4px; margin-bottom: 12px; }
+.inactivity-banner { position: sticky; top: 8px; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.inactivity-banner span { flex: 1; }
+dialog { max-width: min(440px, calc(100vw - 32px)); border: 1px solid #9c8c5d; border-radius: 8px; background: #1b241c; color: var(--text); padding: 26px; box-shadow: var(--shadow); }
+dialog::backdrop { background: #070b09b8; }
+dialog h2 { font-size: 26px; margin: 0 0 16px; }
+dialog p { line-height: 1.6; color: var(--muted); margin-bottom: 24px; }
+dialog form { display: flex; justify-content: flex-end; gap: 12px; }
+.message:not(:empty) { border-left: 3px solid var(--gold); padding: 12px; background: #222b22; }
+.message.error { border-color: var(--red-2); color: #ffc1c3; }
+.transition-settled { animation: none !important; }
+@media (min-width: 1100px) and (orientation: landscape) {
+  .play-grid:not(.deal-scene):not(.dead-scene-view) { grid-template-columns: minmax(210px, .8fr) minmax(320px, 1.4fr) minmax(260px, 1fr); grid-template-areas: 'role action chat' 'table action chat'; align-items: start; }
+  .chat-panel { position: sticky; top: 16px; }
+}
+@media (max-width: 1099px) {
+  .app-shell { grid-template-columns: 180px minmax(0, 1fr); }
+  .workspace { padding: 16px; }
+  .play-grid:not(.deal-scene):not(.dead-scene-view) { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'role' 'action' 'table' 'chat'; }
+  .gm-command-shell { grid-template-columns: 180px minmax(0, 1fr); }
+  .gm-event-log { grid-column: 1 / -1; }
+}
+@media (max-width: 760px), (orientation: portrait) {
+  .app-shell { display: block; }
+  .sidebar { position: static; height: auto; padding: 12px; display: flex; flex-wrap: wrap; gap: 12px; }
+  .brand { padding: 0; border: 0; flex: 1; }
+  .brand p, .sidebar .session-card { display: none; }
+  .sidebar #logout-btn { min-width: 80px; }
+  .nav { order: 3; display: flex; width: 100%; overflow-x: auto; gap: 4px; }
+  .nav-item { flex: 1; justify-content: center; padding: 8px; gap: 6px; font-size: 12px; }
+  .nav-icon { width: 16px; height: 16px; }
+  .workspace { padding: 16px 12px 28px; }
+  .topbar { padding-bottom: 14px; margin-bottom: 12px; gap: 12px; }
+  h2 { font-size: 26px; }
+  .topbar .phase-pill { display: none; }
+  .auth-panel h2 { font-size: 32px; }
+  .auth-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .auth-view { min-height: auto; }
+  .play-grid:not(.deal-scene):not(.dead-scene-view) { display: flex; flex-direction: column; gap: 12px; }
+  .play-grid > .panel { width: 100%; padding: 16px 0; }
+  .action-panel { min-height: 120px; }
+  .action-panel-shell { min-height: 0; }
+  .role-panel { order: 0; } .action-panel-shell { order: 1; } .table-panel, .chat-panel { order: 2; }
+  .role-card { min-height: 200px; max-width: 100%; padding: 16px; }
+  .role-card p { font-size: 14px; }
+  .role-card span { font-size: 32px; }
+  .mobile-play-tabs { display: flex; gap: 8px; margin: 12px 0; }
+  .mobile-play-tabs button { flex: 1; border: 1px solid var(--line); border-radius: 4px; background: #20291f; color: var(--text); }
+  .mobile-play-tabs button[aria-pressed='true'] { border-color: var(--gold); color: var(--gold); background: #303326; }
+  .play-grid[data-mobile-pane='table']:not(.dead-scene-view):not(.deal-scene) > .chat-panel,
+  .play-grid[data-mobile-pane='chat']:not(.dead-scene-view):not(.deal-scene) > .table-panel { display: none; }
+  .target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .target-tile { min-height: 112px; }
+  .gm-command-shell { grid-template-columns: minmax(0, 1fr); }
+  .gm-player-grid { width: calc(100% - 24px); padding-block: 24px; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gm-table-stage { min-height: 320px; }
+  .gm-stage-header { flex-wrap: wrap; padding-block: 10px; }
+  .gm-command-rail, .gm-event-log { border: 0; }
+  .game-over-scene { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; padding: 24px 16px; }
+  .outcome-copy { min-width: 0; justify-items: center; }
+  .outcome-copy h3 { font-size: 38px; }
+  .deal-header strong { font-size: 26px; }
+  .play-grid.deal-scene .deal-header strong { font-size: 28px; }
+  .inactivity-banner { align-items: stretch; flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

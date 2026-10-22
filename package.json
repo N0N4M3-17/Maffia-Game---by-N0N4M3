@@ -7,6 +7,15 @@
   "scripts": {
     "start": "node scripts/start-java-host.js",
     "dev": "node scripts/start-java-host.js",
-    "test": "node scripts/check-static.js"
+    "test": "node scripts/check-static.js",
+    "sync:public": "node scripts/sync-public.cjs",
+    "test:ui": "playwright test",
+    "preview:ui": "node scripts/preview-host.cjs"
+  },
+  "dependencies": {
+    "lucide": "0.468.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
   }
 }

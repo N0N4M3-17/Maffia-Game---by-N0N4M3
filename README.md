@@ -21,6 +21,10 @@ Server binds to `0.0.0.0:3000` by default and prints LAN URLs in terminal.
 
 ## Current implementation status
 
+The UI uses a locally bundled Noir Card Table theme. See [the product plan](docs/PRODUCT_PLAN.md) for implemented, partial, and outstanding work, [UI validation](docs/UI_VALIDATION.md) for coverage, and [asset licences](docs/ASSET_LICENSES.md).
+
+For development: `npm ci`, `npm run sync:public` after asset changes, and `npm run test:ui` for browser tests (requires a compiled Java host and Chrome, or Playwright Chromium in CI). `npm run preview:ui` serves an isolated preview at `http://localhost:3028`, keeping its data separate from the normal host.
+
 - Java backend host for LAN browser play.
 - GitHub Actions CI runs static checks and Maven tests on pull requests.
 - Persistent local account registry with email/username login.

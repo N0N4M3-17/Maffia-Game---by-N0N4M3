@@ -31,3 +31,19 @@ jobs:
 
       - name: Maven tests
         run: mvn -q test
+
+      - name: Install browser test dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser UI regression tests
+        run: npm run test:ui
+
+      - name: Upload UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-evidence
+          path: artifacts/

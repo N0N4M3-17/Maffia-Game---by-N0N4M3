@@ -20,6 +20,12 @@ const state = {
   gmToolsOpen: false,
   activityDirty: false,
   lastHeartbeatAt: 0,
+  lastLocalInteractionAt: Date.now(),
+  pollInFlight: false,
+  connected: true,
+  renderedParts: new Map(),
+  animatedOutcomes: new Set(),
+  lastVisualPhase: '',
 };
 
 const roleLabels = {
@@ -108,9 +114,61 @@ function updateSceneTimers(root, seconds, autoReturnSeconds = 0) {
 }
 
 function notePlayerInteraction() {
+  state.lastLocalInteractionAt = Date.now();
   if (!state.account || !state.playerId) return;
   state.activityDirty = true;
   sendActivityHeartbeat().catch(() => {});
+}
+
+function confirmTableAction(title, description) {
+  const dialog = $('confirm-dialog');
+  if (dialog.open) return Promise.resolve(false);
+  $('confirm-title').textContent = title;
+  $('confirm-description').textContent = description;
+  dialog.returnValue = 'cancel';
+  return new Promise((resolve) => {
+    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+    dialog.showModal();
+  });
+}
+
+function stableMarkup(element, markup) {
+  if (!element || element.innerHTML === markup || state.renderedParts.get(element) === markup) return false;
+  const focus = element.contains(document.activeElement) ? document.activeElement : null;
+  const focusId = focus?.id;
+  const selection = focus && typeof focus.selectionStart === 'number' ? [focus.selectionStart, focus.selectionEnd] : null;
+  const values = [...element.querySelectorAll('input, textarea, select')].filter((el) => el.id && (document.activeElement === el || el.id === 'gm-tool-target')).map((el) => [el.id, el.value]);
+  const positions = [...element.querySelectorAll('.chat-log, .feed-lines, .gm-log-lines')].map((el) => el.scrollTop);
+  const scrollTop = element.scrollTop;
+  const followBottom = element.scrollHeight - element.clientHeight - scrollTop < 32;
+  element.innerHTML = markup;
+  state.renderedParts.set(element, markup);
+  values.forEach(([id, value]) => { const input = document.getElementById(id); if (input) input.value = value; });
+  [...element.querySelectorAll('.chat-log, .feed-lines, .gm-log-lines')].forEach((el, index) => { if (positions[index] !== undefined) el.scrollTop = positions[index]; });
+  element.scrollTop = followBottom ? element.scrollHeight : scrollTop;
+  if (focusId) {
+    const next = document.getElementById(focusId);
+    next?.focus({ preventScroll: true });
+    if (selection && next?.setSelectionRange) next.setSelectionRange(...selection);
+  }
+  return true;
+}
+
+function updateActivityWarning(ps) {
+  const banner = $('inactivity-banner');
+  if (!banner) return;
+  const timeout = Number(ps?.interactionTimeoutSec || 0);
+  const left = Math.max(0, Math.ceil(timeout - (Date.now() - state.lastLocalInteractionAt) / 1000));
+  const active = ps && ps.alive && !['lobby', 'game_over'].includes(ps.phase);
+  banner.classList.toggle('hidden', !active || left > Math.min(60, timeout / 4));
+  $('inactivity-copy').textContent = `Still at the table? Inactivity timeout in ${fmtSec(left)}.`;
+}
+
+function settleOutcomeAnimation(root, snapshot, audience) {
+  if (snapshot.phase !== 'game_over') return;
+  const key = `${audience}|${snapshot.round}|${snapshot.winner}|${snapshot.winningPlayerId || ''}`;
+  if (state.animatedOutcomes.has(key)) root.querySelector('.victor-card')?.classList.add('transition-settled');
+  state.animatedOutcomes.add(key);
 }
 
 async function sendActivityHeartbeat(force = false) {
@@ -174,6 +232,12 @@ async function refreshMe() {
 }
 
 async function authSubmit(form, path) {
+  const button = form.querySelector('button[type="submit"]');
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = path.endsWith('register') ? 'Creating account...' : 'Signing in...';
+  form.setAttribute('aria-busy', 'true');
+  try {
   const payload = Object.fromEntries(new FormData(form).entries());
   const data = await api(path, { method: 'POST', body: JSON.stringify(payload) });
   state.account = data.account;
@@ -181,6 +245,11 @@ async function authSubmit(form, path) {
   showApp(true);
   updateAccountUi();
   await afterLoginRefresh();
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+    form.setAttribute('aria-busy', 'false');
+  }
 }
 
 async function logout() {
@@ -237,7 +306,7 @@ function renderRooms() {
     list.innerHTML = '<div class="empty-state">No rooms yet.</div>';
     return;
   }
-  list.innerHTML = state.rooms.map((room) => `
+  if (!stableMarkup(list, state.rooms.map((room) => `
     <article class="room-row">
       <div>
         <strong>${escapeHtml(room.name)}${room.active ? ' <em>Active</em>' : ''}</strong>
@@ -245,7 +314,7 @@ function renderRooms() {
       </div>
       <button class="secondary-button" data-room-join="${room.id}">Join</button>
     </article>
-  `).join('');
+  `).join(''))) return;
   list.querySelectorAll('[data-room-join]').forEach((btn) => btn.addEventListener('click', () => joinRoom(btn.dataset.roomJoin)));
 }
 
@@ -292,25 +361,25 @@ function roleTotal() {
 }
 
 function renderRoleControls() {
-  $('role-controls').innerHTML = Object.keys(roleLabels).map((key) => `
+  if (!stableMarkup($('role-controls'), Object.keys(roleLabels).map((key) => `
     <div class="stepper">
       <span><span class="role-mini-icon ${key}">${roleIcon(roleLabels[key])}</span>${roleLabels[key]}</span>
       <div>
-        <button data-role-dec="${key}" aria-label="Decrease ${roleLabels[key]}">-</button>
+        <button id="dec-${key}" data-role-dec="${key}" aria-label="Decrease ${roleLabels[key]}">-</button>
         <strong id="${key}-count">${state.roles[key]}</strong>
-        <button data-role-inc="${key}" aria-label="Increase ${roleLabels[key]}">+</button>
+        <button id="inc-${key}" data-role-inc="${key}" aria-label="Increase ${roleLabels[key]}">+</button>
       </div>
     </div>
   `).join('') + `
     <div class="stepper">
       <span><span class="role-mini-icon vigilante">${roleIcon('Vigilante')}</span>Vigilante shots</span>
       <div>
-        <button data-shot-dec aria-label="Decrease vigilante shots">-</button>
+        <button id="dec-shots" data-shot-dec aria-label="Decrease vigilante shots">-</button>
         <strong id="vigi-shots-count">${state.vigilanteShots}</strong>
-        <button data-shot-inc aria-label="Increase vigilante shots">+</button>
+        <button id="inc-shots" data-shot-inc aria-label="Increase vigilante shots">+</button>
       </div>
     </div>
-  `;
+  `)) return;
   $('role-controls').querySelectorAll('[data-role-dec]').forEach((btn) => btn.addEventListener('click', () => adjustRole(btn.dataset.roleDec, -1)));
   $('role-controls').querySelectorAll('[data-role-inc]').forEach((btn) => btn.addEventListener('click', () => adjustRole(btn.dataset.roleInc, 1)));
   $('role-controls').querySelector('[data-shot-dec]').addEventListener('click', () => adjustVigiShots(-1));
@@ -318,9 +387,9 @@ function renderRoleControls() {
 }
 
 function renderTimerControls() {
-  $('timer-controls').innerHTML = Object.keys(timerLabels).map((key) => `
+  if (!stableMarkup($('timer-controls'), Object.keys(timerLabels).map((key) => `
     <label>${timerLabels[key]}<input id="set-${key}" type="number" min="1" value="${state.timerSettings[key]}"></label>
-  `).join('');
+  `).join(''))) return;
   $('timer-controls').querySelectorAll('input').forEach((input) => input.addEventListener('input', () => {
     state.settingsDirty = true;
   }));
@@ -382,6 +451,7 @@ async function gmNextPhase() {
 }
 
 async function gmVoidGame() {
+  if (!await confirmTableAction('Void this game?', 'This ends the current round without recording scores and returns the table to the lobby.')) return;
   await api('/api/gm/void', { method: 'POST', body: '{}' });
   await refreshAll();
   setMessage('Game voided. No scores were recorded.');
@@ -398,6 +468,8 @@ async function gmSpiceAction(action, targetId = '') {
     setMessage('Choose a GM tool target first.', true);
     return;
   }
+  const confirmations = { kill: ['Eliminate this player?', 'This player will be eliminated immediately.'], redraw: ['Redraw living players\' cards?', 'Living roles will be shuffled. Dead players remain dead.'], reveal: ['Reveal this role?', 'Everyone at the table will be able to see this player\'s role.'] };
+  if (!await confirmTableAction(...confirmations[action])) return;
   await api(paths[action], { method: 'POST', body: JSON.stringify({ targetId }) });
   state.lastGmConsoleRenderKey = '';
   state.lastDeadOverviewRenderKey = '';
@@ -418,6 +490,7 @@ async function gmReturnLobby() {
 }
 
 async function resetLobby() {
+  if (!await confirmTableAction('Reset the lobby?', 'All seats will be removed and setup will return to its defaults.')) return;
   await api('/api/gm/reset', { method: 'POST', body: '{}' });
   state.playerId = null;
   localStorage.removeItem('playerId');
@@ -440,6 +513,12 @@ async function refreshGm() {
   $('phase-pill').textContent = gm.phase;
   $('timer-pill').textContent = fmtSec(gm.phaseRemainingSec || 0);
   $('phase-heading').textContent = phaseTitle(gm.phase, gm.round);
+  if (state.lastVisualPhase !== gm.phase) {
+    state.lastVisualPhase = gm.phase;
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      $('phase-heading').animate([{ opacity: .25, transform: 'translateY(4px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 240 });
+    }
+  }
   $('void-game-btn').disabled = gm.phase === 'lobby';
   $('start-night-btn').disabled = gm.phase === 'game_over';
   $('next-phase-btn').disabled = gm.phase === 'game_over';
@@ -470,8 +549,10 @@ async function refreshGm() {
   const gmRenderKey = sceneRenderKey({ gm, visiblePlayers, gmToolsOpen: state.gmToolsOpen });
   if (state.lastGmConsoleRenderKey !== gmRenderKey) {
     state.lastGmConsoleRenderKey = gmRenderKey;
-    $('gm-action-status').innerHTML = gmConsoleMarkup(gm);
-    bindGmConsoleActions();
+    if (stableMarkup($('gm-action-status'), gmConsoleMarkup(gm))) {
+      settleOutcomeAnimation($('gm-action-status'), gm, 'gm');
+      bindGmConsoleActions();
+    }
   }
   updateSceneTimers($('gm-action-status'), gm.phaseRemainingSec || 0, gm.autoReturnRemainingSec || 0);
 }
@@ -663,11 +744,11 @@ function gmConsoleMarkup(gm) {
     ${gameOverSceneMarkup(gm)}
     <div class="gm-command-shell">
       <aside class="gm-command-rail">
-        <button class="gm-master-badge" type="button" data-gm-button="tools" aria-expanded="${state.gmToolsOpen ? 'true' : 'false'}">${roleIcon('Sheriff')}<strong>Game Master</strong></button>
+        <button class="gm-master-badge" type="button" title="Game Master tools" data-gm-button="tools" aria-expanded="${state.gmToolsOpen ? 'true' : 'false'}">${roleIcon('Sheriff')}<strong>Game Master</strong></button>
         <section class="gm-tools ${state.gmToolsOpen ? '' : 'hidden'}">
           <h4>GM tools</h4>
           <label>Target
-            <select data-gm-tool-target ${toolsDisabled || !liveTargets.length ? 'disabled' : ''}>
+            <select id="gm-tool-target" data-gm-tool-target ${toolsDisabled || !liveTargets.length ? 'disabled' : ''}>
               ${toolOptions || '<option value="">No alive targets</option>'}
             </select>
           </label>
@@ -833,7 +914,8 @@ function renderDeadOverview(ps) {
   const overviewKey = sceneRenderKey(ps);
   if (state.lastDeadOverviewRenderKey !== overviewKey) {
     state.lastDeadOverviewRenderKey = overviewKey;
-    target.innerHTML = deadOverviewMarkup(ps);
+    stableMarkup(target, deadOverviewMarkup(ps));
+    settleOutcomeAnimation(target, ps, 'player');
   }
   updateSceneTimers(target, ps.phaseRemainingSec || 0, ps.autoReturnRemainingSec || 0);
 }
@@ -885,20 +967,21 @@ function updateValidation(playerCount) {
 }
 
 function renderRoster(players, canManageSeats = false) {
-  $('player-roster').innerHTML = players.length ? players.map((p) => `
+  if (!stableMarkup($('player-roster'), players.length ? players.map((p) => `
     <article class="player-row ${p.alive ? '' : 'dead'} ${p.accountId === state.account?.id ? 'manager-seat' : ''}">
       ${avatar(p)}
       <div><strong>${escapeHtml(p.name)}</strong><span>${p.role || 'Waiting'}</span></div>
       <em>${p.alive ? 'Alive' : 'Dead'}</em>
       ${canManageSeats ? `<button class="ghost-button seat-remove" data-remove-seat="${escapeHtml(p.id)}" aria-label="Remove ${escapeHtml(p.name)} from lobby">Remove</button>` : ''}
     </article>
-  `).join('') : '<div class="empty-state">No players seated yet.</div>';
+  `).join('') : '<div class="empty-state">No players seated yet.</div>')) return;
   $('player-roster').querySelectorAll('[data-remove-seat]').forEach((btn) => {
     btn.addEventListener('click', () => removeSeat(btn.dataset.removeSeat).catch((err) => setMessage(err.message, true)));
   });
 }
 
 async function removeSeat(playerId) {
+  if (!await confirmTableAction('Remove this seat?', 'The player can join the lobby again before the next game.')) return;
   await api(`/api/gm/players/${encodeURIComponent(playerId)}`, { method: 'DELETE' });
   if (state.playerId === playerId) {
     state.playerId = null;
@@ -921,7 +1004,19 @@ async function refreshPlayer() {
   }
   try {
     const ps = await api(`/api/player-state/${state.playerId}`);
+    const previousPhase = state.lastPlayerState?.phase;
+    if (previousPhase !== ps.phase && ps.phase === 'night0') {
+      state.animatedOutcomes.clear();
+      state.lastLocalInteractionAt = Date.now();
+    }
+    if (previousPhase === 'game_over' && ps.phase === 'lobby') {
+      state.pendingTargetByPhase = {};
+      state.roleReveal.revealed = false;
+      state.roleReveal.acknowledged = false;
+      setMessage('Back in the lobby. Ready for another round.');
+    }
     state.lastPlayerState = ps;
+    updateActivityWarning(ps);
     $('join-state').classList.add('hidden');
     $('role-state').classList.remove('hidden');
     renderRole(ps);
@@ -1025,6 +1120,7 @@ function playerGuidanceMarkup(ps) {
 }
 
 function renderRole(ps) {
+  document.querySelector('.mobile-play-tabs')?.classList.toggle('hidden', !ps.alive || ['night0', 'game_over'].includes(ps.phase));
   state.currentPlayerPhase = ps.phase;
   const role = ps.role || '';
   const roleClass = String(role || 'town').toLowerCase();
@@ -1305,13 +1401,13 @@ function renderPlayerAction(ps) {
 }
 
 function renderPlayerList(players) {
-  $('player-list').innerHTML = players.map((p) => `
+  stableMarkup($('player-list'), players.map((p) => `
     <article class="player-row ${p.alive ? '' : 'dead'}">
       ${avatar(p)}
       <div><strong>${escapeHtml(p.name)}</strong><span>${p.revealedRole || (p.alive ? 'In play' : 'Unknown')}</span></div>
       <em class="life-badge ${p.alive ? 'alive' : 'dead'}">${p.alive ? 'Alive' : 'Dead'}</em>
     </article>
-  `).join('') || '<div class="empty-state">Waiting for players.</div>';
+  `).join('') || '<div class="empty-state">Waiting for players.</div>');
 }
 
 function renderChats(ps) {
@@ -1319,8 +1415,8 @@ function renderChats(ps) {
   const publicVisible = !!ps.publicChatVisible;
   const publicCanSend = !!ps.publicChatCanSend;
   mafiaPanel.classList.toggle('hidden', !(ps.role === 'Mafia' && ps.phase === 'night_mafia' && ps.alive));
-  $('mafia-chat-log').innerHTML = chatLines(ps.mafiaChat || []);
-  $('player-chat-log').innerHTML = publicVisible ? chatLines(ps.playerChat || []) : '<p class="muted">Public chat is hidden during private night actions.</p>';
+  stableMarkup($('mafia-chat-log'), chatLines(ps.mafiaChat || []));
+  stableMarkup($('player-chat-log'), publicVisible ? chatLines(ps.playerChat || []) : '<p class="muted">Public chat is hidden during private night actions.</p>');
   $('player-chat-input').disabled = !publicCanSend;
   $('player-chat-form').querySelector('button').disabled = !publicCanSend;
   $('player-chat-form').classList.toggle('disabled', !publicCanSend);
@@ -1444,6 +1540,7 @@ async function refreshAdminUsers() {
     setMessage('User updated.');
   }));
   $('admin-users').querySelectorAll('[data-delete-user]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!await confirmTableAction('Delete this account?', 'This removes the local player account and cannot be undone.')) return;
     await api(`/api/admin/users/${btn.dataset.deleteUser}`, { method: 'DELETE' });
     await refreshAdminUsers();
     setMessage('User deleted.');
@@ -1466,14 +1563,25 @@ async function createAdminUser(form) {
 }
 
 async function refreshAll() {
-  if (!state.account) return;
-  await sendActivityHeartbeat().catch(() => {});
-  await Promise.all([
+  if (!state.account || state.pollInFlight) return;
+  state.pollInFlight = true;
+  try {
+    await sendActivityHeartbeat().catch(() => {});
+    await Promise.all([
     refreshServerInfo().catch(() => {}),
     refreshRooms().catch(() => {}),
-    refreshGm().catch((err) => setMessage(err.message, true)),
+    refreshGm().then(() => {
+      if (!state.connected) setMessage('Connection restored. Your seat is retained.');
+      state.connected = true;
+      $('connection-banner').classList.add('hidden');
+    }).catch(() => {
+      state.connected = false;
+      $('connection-banner').textContent = 'Connection lost. Reconnecting to your table...';
+      $('connection-banner').classList.remove('hidden');
+    }),
     refreshPlayer().catch(() => {}),
-  ]);
+    ]);
+  } finally { state.pollInFlight = false; }
 }
 
 function startPolling() {
@@ -1488,6 +1596,39 @@ function stopPolling() {
 }
 
 function bindEvents() {
+  const banner = document.createElement('div');
+  banner.id = 'connection-banner';
+  banner.className = 'connection-banner hidden';
+  banner.setAttribute('role', 'status');
+  document.querySelector('.workspace').prepend(banner);
+  const warning = document.createElement('div');
+  warning.id = 'inactivity-banner';
+  warning.className = 'inactivity-banner hidden';
+  warning.setAttribute('role', 'alert');
+  warning.innerHTML = '<span id="inactivity-copy"></span><button class="primary-button" id="stay-in-game" type="button">Stay in game</button>';
+  banner.after(warning);
+  $('stay-in-game').addEventListener('click', async () => {
+    notePlayerInteraction();
+    try { await sendActivityHeartbeat(true); warning.classList.add('hidden'); }
+    catch { setMessage('Unable to reach the host. Trying to reconnect.', true); }
+  });
+  document.querySelectorAll('.nav-item').forEach((button) => {
+    const names = { rooms: 'door-open', host: 'crown', play: 'spade', profile: 'user-round', admin: 'shield-check' };
+    const glyph = document.createElement('i');
+    glyph.dataset.lucide = names[button.dataset.tab];
+    glyph.className = 'nav-icon';
+    button.prepend(glyph);
+  });
+  window.lucide?.createIcons();
+  document.querySelectorAll('button[aria-label]').forEach((button) => { button.title = button.getAttribute('aria-label'); });
+  document.querySelectorAll('.mobile-play-tabs button').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.querySelector('.play-grid').dataset.mobilePane = button.dataset.mobilePane;
+      document.querySelectorAll('.mobile-play-tabs button').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+    });
+  });
+  ['app-message', 'auth-message'].forEach((id) => { $(id).setAttribute('role', 'status'); $(id).setAttribute('aria-live', 'polite'); });
+  ['mafia-chat-input', 'player-chat-input'].forEach((id) => $(id).setAttribute('aria-label', id === 'mafia-chat-input' ? 'Mafia message' : 'Public message'));
   ['pointerdown', 'keydown', 'touchstart', 'input'].forEach((eventName) => {
     document.addEventListener(eventName, notePlayerInteraction, { passive: true });
   });
@@ -1513,7 +1654,7 @@ function bindEvents() {
   $('return-lobby-btn').addEventListener('click', () => gmReturnLobby().catch((err) => setMessage(err.message, true)));
   $('reset-lobby-btn').addEventListener('click', () => resetLobby().catch((err) => setMessage(err.message, true)));
   $('reveal-role-btn').addEventListener('click', () => { state.roleReveal.revealed = true; state.lastActionRenderKey = ''; refreshPlayer(); });
-  $('hide-role-btn').addEventListener('click', () => { state.roleReveal.revealed = false; refreshPlayer(); });
+  $('hide-role-btn').addEventListener('click', () => { state.roleReveal.revealed = false; state.roleReveal.acknowledged = false; refreshPlayer(); });
   $('ack-role-btn').addEventListener('click', () => { state.roleReveal.acknowledged = true; state.roleReveal.revealed = true; refreshPlayer(); });
   $('role-card').addEventListener('click', toggleRolePeek);
   $('role-card').addEventListener('keydown', roleCardKeydown);
