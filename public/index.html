@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mafia 2.0</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/noir.css">
 </head>
 <body>
   <div class="app-shell">
@@ -40,8 +41,8 @@
         <div class="auth-panel">
           <div>
             <p class="eyebrow">Private LAN game</p>
-            <h2>Sign in before you sit at the table.</h2>
-            <p class="muted">Accounts are stored in the local database. Email and username both work for login after registration.</p>
+            <h2>Mafia 2.0</h2>
+            <p class="muted">Take your seat. Keep your secrets.</p>
           </div>
           <div class="auth-grid">
             <form id="login-form" class="panel compact">
@@ -191,7 +192,11 @@
               <strong id="tray-target">None</strong>
             </div>
           </section>
-          <div class="content-grid play-grid">
+          <div class="mobile-play-tabs" role="group" aria-label="Table and chat views">
+            <button type="button" data-mobile-pane="table" aria-pressed="true">Table</button>
+            <button type="button" data-mobile-pane="chat" aria-pressed="false">Chat</button>
+          </div>
+          <div class="content-grid play-grid" data-mobile-pane="table">
             <section class="panel role-panel">
               <p class="eyebrow">Private</p>
               <h3>Your role</h3>
@@ -318,6 +323,12 @@
       </section>
     </main>
   </div>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+    <h2 id="confirm-title">Confirm action</h2>
+    <p id="confirm-description"></p>
+    <form method="dialog"><button value="cancel" class="secondary-button">Cancel</button><button value="confirm" class="danger-button">Confirm</button></form>
+  </dialog>
+  <script src="/vendor/lucide.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

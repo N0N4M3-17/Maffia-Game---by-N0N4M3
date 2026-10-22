@@ -2,3 +2,6 @@ data/
 target/
 *.log
 .idea/
+.local-backups/
+node_modules/
+artifacts/

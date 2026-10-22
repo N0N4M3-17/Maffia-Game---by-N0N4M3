@@ -5,7 +5,21 @@ This document captures only the first two implementation sections requested:
 1. Phase state machine
 2. Per-role permission matrix by phase
 
-> Note: GM override controls are intentionally **out of scope** for the app. The GM can still arbitrate in person, but no in-app override workflow is specified in this version.
+> Updated 2026-10-22: authenticated local accounts replace name-only joining. These additions supersede older visibility and non-goal statements below.
+
+## Implemented Extensions
+
+- Lobby launch enters private `NIGHT0` dealing/reveal before `NIGHT_MAFIA`.
+- Sheriff, Doctor, and Vigilante submissions lock and briefly hold results before advancing. Separate Sheriff confirmation remains outstanding.
+- Jester has no night action and wins independently when eliminated by a day vote. Night/GM elimination does not trigger this win.
+- An armed Vigilante wins independently when morning contains only that Vigilante and one Mafia.
+- GM tools: publicly reveal a role, morning elimination, morning living-role reshuffle without revival, and void game.
+- Dead players have read-only observer roles/action summaries. Authorized observer payloads and deliberate public GM reveals are exceptions to the older hidden-role matrix below.
+- Newly eliminated players have one final statement; no ongoing dead-player actions/chat.
+- Outcomes identify winner/void reason; voids record no scores. Both outcomes schedule lobby return preserving remaining seats and timers.
+- Alive-player inactivity uses explicit interaction heartbeats, not polls, tracked per seat: twice the longest phase, minimum 30 seconds. Expiry/sign-out voids the game and removes the departing seat on lobby return. Independent device/session tracking remains outstanding.
+- Outcome countdown currently reuses the inactivity timeout. Separate duration configuration remains outstanding.
+- Day and Mafia votes require strict majority; no majority means no elimination/kill.
 
 ---
 
@@ -30,6 +44,7 @@ This document captures only the first two implementation sections requested:
 
 ```text
 LOBBY
+  -> NIGHT0 (private dealing and role reveal)
   -> NIGHT_MAFIA
 
 NIGHT_MAFIA
@@ -202,6 +217,6 @@ Legend:
 
 ## Non-Goals in this Version
 
-- No in-app GM override workflow.
-- No custom role expansion logic in this section.
-- No persistence/DB schema in this section.
+- No full moderation/appeals workflow beyond GM table tools.
+- No custom packs beyond Town, Mafia, Sheriff, Doctor, Vigilante, Jester.
+- Local accounts/rooms/profiles persist; active-game recovery is not implemented.
