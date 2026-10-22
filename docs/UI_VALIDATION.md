@@ -13,6 +13,7 @@ Eleven files contained unresolved merge-conflict markers. The modern account-bas
 - `npm run test:ui`: Chromium/Chrome browser tests exercise all account navigation screens at 1440x1000, 390x844, and 844x390; six-role dealing/peeking; long names; preserved timer edits, drafts, focus, and selected targets; cancellable GM confirmations; all outcome factions and void reason; observer mode; inactivity warning; reduced motion; lobby return.
 - A separate test exercises a 20-player observer grid at widths 360, 844, and 1440.
 - Real Java API smoke: register an isolated test account and log in using both username and email.
+- Room follow-up adds real-server host/admin authorization, observer/player mode, timeout persistence, ban-bypass denial, eviction/unban, active-round void/disband, and portrait room-management tests.
 - SVG MIME type, local icon bundle, artwork delivery, and browser runtime errors are checked.
 
 Screenshots are written to ignored `artifacts/screenshots/` and uploaded as CI artifacts. Initial visual inspection caught narrow-landscape GM overflow; the layout was corrected and rerun. Card/background contrast and excessive portrait action whitespace were also refined after screenshot inspection.

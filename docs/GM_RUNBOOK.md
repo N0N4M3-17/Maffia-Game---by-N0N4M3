@@ -52,6 +52,8 @@ The invite panel provides:
 
 ## 5. Secure Public Hosting
 
+Room owners and administrators can use **Manage room** in the room list to edit or disband rooms, kick members, set temporary room timeouts, and lift restrictions. Administrators can also evict accounts permanently from a room. Host/admin accounts can choose **Observe** to manage without consuming a player seat. See [Room management](ROOM_MANAGEMENT.md) for permission and lifecycle details.
+
 For internet play, place the Java host behind an HTTPS tunnel or reverse proxy and start the host with `PUBLIC_URL` set:
 
 ```bash
